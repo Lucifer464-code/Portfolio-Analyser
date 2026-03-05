@@ -18,15 +18,19 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from io import BytesIO
 
-from config import RISK_PROFILES, TRADING_DAYS
-from data_engine import load_and_validate_csv, fetch_market_data, compute_returns
-from risk_engine import generate_risk_summary, rolling_volatility, rolling_correlation, compute_drawdown_series
+from config import RISK_PROFILES, TRADING_DAYS, DEFAULT_TRANSACTION_COST
+from data_engine import (
+    load_and_validate_csv, fetch_market_data, compute_returns,
+    aggregate_holdings, compute_xirr, compute_pl_summary,
+)
+from risk_engine import (generate_risk_summary, rolling_volatility, rolling_correlation,
+    compute_drawdown_series, var_cvar_summary, sector_concentration,
+    asset_type_concentration, effective_n)
 from optimizer import (
     optimize_portfolio, simulate_efficient_frontier, portfolio_performance,
     risk_contribution, OPTIMIZERS, OPTIMIZER_DESCRIPTIONS,
 )
 from analytics import portfolio_health_score
-from rebalance_engine import generate_rebalance_tables
 from enhancement_engine import (
     compute_portfolio_3m_relative_performance,
     generate_enhancement_recommendations,
@@ -55,31 +59,66 @@ pio.templates["portfolio_dark"] = go.layout.Template(
 )
 px.defaults.template = "portfolio_dark"
 
+pio.templates["portfolio_light"] = go.layout.Template(
+    layout=go.Layout(
+        paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
+        font=dict(family="DM Sans, sans-serif", color="#334155", size=12),
+        colorway=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16"],
+        xaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#e2e8f0", tickfont=dict(color="#64748b")),
+        yaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#e2e8f0", tickfont=dict(color="#64748b")),
+        legend=dict(bgcolor="rgba(255,255,255,0.9)", bordercolor="#e2e8f0", borderwidth=1),
+        title=dict(font=dict(color="#0f172a", size=14)),
+    )
+)
+
 # ── CSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
-/* ================= THEME VARIABLES ================= */
+/* =========================================================
+   THEME VARIABLES
+========================================================= */
 
-/* Dark (default) */
+/* ---- DARK (default) ---- */
 :root{
---bg-base:#080d18; --bg-surface:#0b1120; --bg-elevated:#111827; --bg-card:#0f1a2e;
---border:#1a2744; --accent:#3b82f6; --accent-glow:rgba(59,130,246,.15);
---positive:#22c55e; --negative:#ef4444; --warning:#f59e0b;
---text-primary:#e2e8f0; --text-secondary:#94a3b8; --text-muted:#64748b;
---radius:12px; --radius-sm:8px;
+--bg-base:#080d18;
+--bg-surface:#0b1120;
+--bg-elevated:#111827;
+--bg-card:#0f1a2e;
+--border:#1a2744;
+--accent:#3b82f6;
+--accent-glow:rgba(59,130,246,.15);
+--positive:#22c55e;
+--negative:#ef4444;
+--warning:#f59e0b;
+--text-primary:#e2e8f0;
+--text-secondary:#94a3b8;
+--text-muted:#64748b;
+--radius:12px;
+--radius-sm:8px;
 }
 
-/* Light */
+/* ---- LIGHT ---- */
 .light-mode{
---bg-base:#f6f8fc; --bg-surface:#fff; --bg-elevated:#f1f5f9; --bg-card:#fff;
---border:#e2e8f0; --accent:#2563eb; --accent-glow:rgba(37,99,235,.12);
---positive:#16a34a; --negative:#dc2626; --warning:#d97706;
---text-primary:#0f172a; --text-secondary:#334155; --text-muted:#64748b;
+--bg-base:#f6f8fc;
+--bg-surface:#ffffff;
+--bg-elevated:#f1f5f9;
+--bg-card:#ffffff;
+--border:#e2e8f0;
+--accent:#2563eb;
+--accent-glow:rgba(37,99,235,.12);
+--positive:#16a34a;
+--negative:#dc2626;
+--warning:#d97706;
+--text-primary:#0f172a;
+--text-secondary:#334155;
+--text-muted:#64748b;
 }
 
-/* ================= GLOBAL ================= */
+/* =========================================================
+   GLOBAL
+========================================================= */
 
 html,body,[class*="css"]{
 font-family:'DM Sans',sans-serif!important;
@@ -103,14 +142,18 @@ h3{font-size:.95rem!important}
 p,li,span{color:var(--text-secondary)}
 code,.stMetric label{font-family:'DM Mono',monospace!important}
 
-/* ================= SIDEBAR ================= */
+/* =========================================================
+   SIDEBAR
+========================================================= */
 
 [data-testid="stSidebar"]{
 background:var(--bg-surface)!important;
 border-right:1px solid var(--border)!important;
 }
 
-/* ================= METRICS ================= */
+/* =========================================================
+   METRICS
+========================================================= */
 
 div[data-testid="stMetric"]{
 background:linear-gradient(145deg,var(--bg-card),var(--bg-elevated))!important;
@@ -136,7 +179,9 @@ font-weight:600!important;
 color:var(--text-primary)!important;
 }
 
-/* ================= TABS ================= */
+/* =========================================================
+   TABS
+========================================================= */
 
 .stTabs [data-baseweb="tab-list"]{
 gap:3px!important;
@@ -153,7 +198,9 @@ color:var(--text-primary)!important;
 border-bottom:2px solid var(--accent)!important;
 }
 
-/* ================= TABLES ================= */
+/* =========================================================
+   TABLES & ALERTS
+========================================================= */
 
 .stDataFrame{
 border:1px solid var(--border)!important;
@@ -167,12 +214,14 @@ border:1px solid var(--border)!important;
 border-radius:var(--radius)!important;
 color:var(--text-secondary)!important;
 }
-hr{border-color:var(--border)!important;margin:1.5rem 0!important}
+
+hr{
+border-color:var(--border)!important;
+margin:1.5rem 0!important;
+}
 
 </style>
 """, unsafe_allow_html=True)
-
-
 # ==========================================================
 # UI HELPERS
 # ==========================================================
@@ -208,9 +257,22 @@ def style_pl(df, pl_cols):
 
 def slice_tf(data, tf):
     if not isinstance(data.index, pd.DatetimeIndex): return data
-    days = {"1M":30,"3M":90,"6M":180,"1Y":365,"3Y":1095,"5Y":1826}
-    if tf not in days: return data
-    return data[data.index >= pd.Timestamp.today() - pd.Timedelta(days=days[tf])]
+    today = pd.Timestamp.today().normalize()
+    offsets = {
+        "1M":  today - pd.DateOffset(months=1),
+        "3M":  today - pd.DateOffset(months=3),
+        "6M":  today - pd.DateOffset(months=6),
+        "1Y":  today - pd.DateOffset(years=1),
+        "3Y":  today - pd.DateOffset(years=3),
+        "5Y":  today - pd.DateOffset(years=5),
+    }
+    if tf not in offsets: return data
+    start = offsets[tf]
+    # If start date is not a trading day, step back to the nearest prior trading day
+    available = data.index[data.index <= start]
+    if not available.empty:
+        start = available[-1]
+    return data[data.index >= start]
 
 
 def quick_chart(fig, height=320):
@@ -262,8 +324,7 @@ def _fig_to_image(fig, width_px, height_px, w_inch, h_inch):
 def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
                            curr_ret, curr_vol, opt_ret, opt_vol, health_score,
                            opt_method="Max Sharpe", portfolio_returns=None,
-                           benchmark_returns=None, mvo_table=None, rule_table=None,
-                           enhancements=None, currency="$"):
+                           benchmark_returns=None, enhancements=None, currency="$"):
     buffer = BytesIO()
     pdf    = SimpleDocTemplate(buffer, pagesize=letter,
                                rightMargin=0.5*inch, leftMargin=0.5*inch,
@@ -293,8 +354,6 @@ def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
         ["Current Return (Ann.)",  f"{curr_ret:.2%}"],
         ["Current Volatility",     f"{curr_vol:.2%}"],
     ], [3*inch, 2*inch], '#1e40af', '#f0f4f8')
-
-    # Risk
     _pdf_section(story, h_style, "Risk Metrics", [
         ["Metric", "Value"],
         ["Sharpe Ratio",  f"{risk_summary.get('Sharpe Ratio',0):.3f}"],
@@ -319,21 +378,23 @@ def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
     # Holdings table
     story.append(PageBreak())
     try:
-        hd = df[["Ticker","Name","Quantity","Current Price","Market Value","Current Weight"]].copy()
+        hd = df[["Ticker","Quantity","Avg Cost","Current Price","Market Value","Current Weight"]].copy()
         hd["Market Value"]   = hd["Market Value"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
         hd["Current Weight"] = hd["Current Weight"].apply(lambda x: f"{float(x):.2%}" if pd.notna(x) else "N/A")
         hd["Current Price"]  = hd["Current Price"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
-        rows = [["Ticker","Name","Qty","Price","Value","Weight"]]
+        hd["Avg Cost"]       = hd["Avg Cost"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
+        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight"]]
         for _, r in hd.iterrows():
             try:
-                rows.append([str(r["Ticker"]), str(r["Name"])[:20], f"{float(r['Quantity']):,.0f}",
-                             str(r["Current Price"]), str(r["Market Value"]), str(r["Current Weight"])])
+                rows.append([str(r["Ticker"]), f"{float(r['Quantity']):,.0f}",
+                             str(r["Avg Cost"]), str(r["Current Price"]),
+                             str(r["Market Value"]), str(r["Current Weight"])])
             except (ValueError, TypeError):
                 continue
     except Exception:
-        rows = [["Ticker","Name","Qty","Price","Value","Weight"]]
+        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight"]]
     _pdf_section(story, h_style, "Current Holdings", rows,
-                 [0.9*inch,1.6*inch,0.7*inch,0.8*inch,0.95*inch,0.7*inch], '#1e40af')
+                 [1.0*inch,0.7*inch,1.0*inch,0.9*inch,1.0*inch,0.75*inch], '#1e40af')
 
     # Performance comparison chart
     if portfolio_returns is not None and benchmark_returns is not None:
@@ -379,34 +440,6 @@ def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
         except Exception:
             pass
 
-    # MVO rebalance table
-    if mvo_table is not None and not mvo_table.empty:
-        rows = [["Ticker","Current %","Target %","Change %","Action"]]
-        for _, r in mvo_table.iterrows():
-            try:
-                rows.append([str(r.get("Ticker","N/A")),
-                             f"{float(r.get('Current Weight',0)):.2%}",
-                             f"{float(r.get('Optimized Weight',0)):.2%}",
-                             f"{float(r.get('Allocation Change',0)):+.2%}",
-                             str(r.get("Action","N/A"))])
-            except (ValueError, TypeError): continue
-        _pdf_section(story, h_style, "Rebalance Recommendations", rows,
-                     [0.8*inch,1.2*inch,1.2*inch,1.2*inch,1.2*inch], '#1e40af', page_break=True)
-
-    # Rule-based rebalance
-    if rule_table is not None and not rule_table.empty:
-        rows = [["Ticker","3M Return","Benchmark","Relative %","Action"]]
-        for _, r in rule_table.iterrows():
-            try:
-                rows.append([str(r.get("Ticker","N/A")),
-                             f"{float(r.get('3M Return',0)):.2%}",
-                             f"{float(r.get('Benchmark 3M',0)):.2%}",
-                             f"{float(r.get('Relative Performance',0)):+.2%}",
-                             str(r.get("Action","N/A"))])
-            except (ValueError, TypeError): continue
-        _pdf_section(story, h_style, "3-Month Relative Performance", rows,
-                     [0.8*inch,1.2*inch,1.2*inch,1.2*inch,1.2*inch], '#1e40af')
-
     # Enhancements
     if enhancements is not None and not enhancements.empty:
         rows = [["Ticker","Price","1Y Return","Alpha","Score"]]
@@ -432,16 +465,17 @@ def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
 
 st.markdown("""
 <div style="display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:14px;
-    background:linear-gradient(135deg,#0f1e3d 0%,#111827 100%);border:1px solid #1e3a6e;
-    margin-bottom:28px;box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+    background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-card) 100%);
+    border:1px solid var(--border);
+    margin-bottom:28px;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
   <div style="width:46px;height:46px;border-radius:12px;flex-shrink:0;
       background:linear-gradient(135deg,#2563eb 0%,#60a5fa 100%);
       display:flex;align-items:center;justify-content:center;font-size:22px;
       box-shadow:0 4px 16px rgba(59,130,246,0.45);">📈</div>
   <div>
-    <div style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.03em;
-        line-height:1.2;text-shadow:0 0 30px rgba(96,165,250,0.4);">Portfolio Analyser</div>
-    <div style="font-size:11px;color:#93c5fd;margin-top:3px;letter-spacing:0.1em;font-weight:500;">
+    <div style="font-size:20px;font-weight:700;color:var(--text-primary);letter-spacing:-0.03em;
+        line-height:1.2;">Portfolio Analyser</div>
+    <div style="font-size:11px;color:var(--accent);margin-top:3px;letter-spacing:0.1em;font-weight:500;">
         INSTITUTIONAL DASHBOARD</div>
   </div>
 </div>
@@ -477,17 +511,33 @@ def get_latest_prices(price_data, tickers):
     return result
 
 
+_QUOTE_TYPE_MAP = {
+    "EQUITY":         "Stock",
+    "ETF":            "ETF",
+    "MUTUALFUND":     "Mutual Fund",
+    "CRYPTOCURRENCY": "Crypto",
+    "FUTURE":         "Futures",
+    "INDEX":          "Index",
+    "CURRENCY":       "Currency",
+    "BOND":           "Bond",
+}
+
 @st.cache_data(show_spinner=False)
 def fetch_ticker_metadata(tickers):
     def _fetch(ticker):
         try:
-            info = yf.Ticker(ticker).info
-            return ticker, info.get("longName") or info.get("shortName") or ticker, info.get("sector","Unknown")
-        except Exception: return ticker, ticker, "Unknown"
+            info       = yf.Ticker(ticker).info
+            name       = info.get("longName") or info.get("shortName") or ticker
+            sector     = info.get("sector", "Unknown")
+            raw_type   = (info.get("quoteType") or "").upper()
+            asset_type = _QUOTE_TYPE_MAP.get(raw_type, raw_type.title() if raw_type else "Other")
+            return ticker, name, sector, asset_type
+        except Exception:
+            return ticker, ticker, "Unknown", "Other"
     rows = []
     with ThreadPoolExecutor(max_workers=10) as ex:
-        for t, name, sector in ex.map(_fetch, tickers):
-            rows.append({"Ticker":t,"Name":name,"Sector":sector})
+        for t, name, sector, asset_type in ex.map(_fetch, tickers):
+            rows.append({"Ticker": t, "Name": name, "Sector": sector, "Asset Type": asset_type})
     return pd.DataFrame(rows).set_index("Ticker")
 
 
@@ -524,20 +574,85 @@ def detect_vol_regime(returns, window=60):
 with st.sidebar:
     st.header("Configuration")
     uploaded_file        = st.file_uploader("Upload Portfolio CSV", type="csv")
-    benchmark_name       = st.selectbox("Benchmark", ["S&P 500","NIFTY 50","NIFTY 500","SENSEX","Dow Jones","NASDAQ"])
-    benchmark_map        = {"S&P 500":"^GSPC","NIFTY 50":"^NSEI","NIFTY 500":"^CRSLDX",
-                            "SENSEX":"^BSESN","Dow Jones":"^DJI","NASDAQ":"^IXIC"}
-    benchmark            = benchmark_map[benchmark_name]
+    benchmark_map = {
+        "S&P 500":   "^GSPC",
+        "NIFTY 50":  "^NSEI",
+        "NIFTY 500": "^CRSLDX",
+        "SENSEX":    "^BSESN",
+        "Dow Jones": "^DJI",
+        "NASDAQ":    "^IXIC",
+        "Custom…":   None,
+    }
+    benchmark_name = st.selectbox("Benchmark", list(benchmark_map.keys()))
+
+    if benchmark_name == "Custom…":
+        _custom_input = st.text_input(
+            "Enter ticker symbol",
+            value=st.session_state.get("custom_benchmark", ""),
+            placeholder="e.g. QQQ, URTH, ^FTSE",
+            help="Any ticker supported by Yahoo Finance — indices (^), ETFs, or stocks",
+        ).strip().upper()
+
+        if _custom_input:
+            if _custom_input != st.session_state.get("_last_custom_checked"):
+                with st.spinner(f"Validating {_custom_input}…"):
+                    try:
+                        _test  = yf.Ticker(_custom_input).fast_info
+                        _valid = hasattr(_test, "last_price") and _test.last_price is not None
+                    except Exception:
+                        _valid = False
+                st.session_state["_last_custom_checked"] = _custom_input
+                st.session_state["_custom_valid"]        = _valid
+                if _valid:
+                    st.session_state["custom_benchmark"] = _custom_input
+
+            if st.session_state.get("_custom_valid", False):
+                st.success(f"✓ {st.session_state['custom_benchmark']}")
+                benchmark = st.session_state["custom_benchmark"]
+            else:
+                st.error("Ticker not found on Yahoo Finance")
+                benchmark = st.session_state.get("custom_benchmark", "^GSPC")
+        else:
+            benchmark = st.session_state.get("custom_benchmark", "^GSPC")
+    else:
+        benchmark = benchmark_map[benchmark_name]
+        st.session_state.pop("custom_benchmark",      None)
+        st.session_state.pop("_last_custom_checked",  None)
+        st.session_state.pop("_custom_valid",         None)
     risk_profile         = st.selectbox("Risk Profile", list(RISK_PROFILES.keys()))
 
     st.markdown("<hr>", unsafe_allow_html=True)
     threshold_pct        = st.slider("Rebalance Threshold (%)",  0.0, 10.0,  2.0, 0.1)
-    transaction_cost_pct = st.slider("Transaction Cost (%)",     0.0,  2.0,  0.1, 0.05)
     max_weight_pct       = st.slider("Max Position Size (%)",    5.0, 50.0, 15.0, 1.0)
 
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.toggle("☀️ Light Theme", value=False, key="light_mode")
+
+_light = st.session_state.get("light_mode", False)
+px.defaults.template = "portfolio_light" if _light else "portfolio_dark"
+
+if _light:
+    st.markdown("""
+<style>
+:root {
+    --bg-base:#f6f8fc;
+    --bg-surface:#ffffff;
+    --bg-elevated:#f1f5f9;
+    --bg-card:#ffffff;
+    --border:#e2e8f0;
+    --accent:#2563eb;
+    --accent-glow:rgba(37,99,235,.12);
+    --positive:#16a34a;
+    --negative:#dc2626;
+    --warning:#d97706;
+    --text-primary:#0f172a;
+    --text-secondary:#334155;
+    --text-muted:#64748b;
+}
+</style>
+""", unsafe_allow_html=True)
 
 threshold        = threshold_pct        / 100
-transaction_cost = transaction_cost_pct / 100
 max_weight       = max_weight_pct       / 100
 lookback         = "max"
 
@@ -551,7 +666,8 @@ if uploaded_file is None:
         <div style="font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">
             Upload your portfolio to begin</div>
         <div style="font-size:13px;color:var(--text-muted);max-width:320px;margin:0 auto;">
-            Upload a CSV with Ticker and Quantity columns. Optionally include Avg Cost for P&amp;L.
+            Upload a CSV with columns: <strong style="color:var(--accent);">Ticker, Date, Action, Quantity, Price</strong>.
+            Action should be <strong style="color:var(--accent);">Buy</strong> or <strong style="color:var(--accent);">Sell</strong>.
             Indian stocks: use <strong style="color:var(--accent);">.NS</strong> or
             <strong style="color:var(--accent);">.BO</strong> suffixes.</div>
     </div>""", unsafe_allow_html=True)
@@ -560,32 +676,188 @@ if uploaded_file is None:
 _file_id = getattr(uploaded_file, "file_id", uploaded_file.name)
 if st.session_state.get("_last_file_id") != _file_id:
     for _k in ("data_loaded", "selected_asset", "risk_summary", "drawdown_series",
-               "frontier", "optimal_weights", "_opt_key"):
+               "frontier", "optimal_weights", "_opt_key", "_portfolio_cache",
+               "_benchmark_cache"):
         st.session_state.pop(_k, None)
     st.session_state["_last_file_id"] = _file_id
+
+# Bust only the benchmark cache when benchmark ticker changes
+if st.session_state.get("_last_benchmark") != benchmark:
+    st.session_state.pop("_benchmark_cache", None)
+    st.session_state["_last_benchmark"] = benchmark
 
 
 # ==========================================================
 # DATA LOAD & VALIDATION
 # ==========================================================
 
-result = load_and_validate_csv(uploaded_file)
-df     = result[0] if isinstance(result, tuple) else result
-if df is None or df.empty: st.error("Uploaded file contains no valid data."); st.stop()
-for col in ("Ticker","Quantity"):
-    if col not in df.columns: st.error(f"'{col}' column missing."); st.stop()
+# ── All heavy construction is cached in session_state ──────
+# Only runs on first load or when a new file is uploaded.
+# Tab switches, timeframe radios, and slider changes skip
+# everything below and read directly from session_state.
 
-df["Ticker"]   = df["Ticker"].astype(str).str.upper().str.strip()
-df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
-df             = df.dropna(subset=["Ticker","Quantity"])
-tickers        = df["Ticker"].unique().tolist()
-tickers_tuple  = tuple(tickers)
+if "_portfolio_cache" not in st.session_state:
 
-# Market detection
-_market   = "IN" if sum(1 for t in tickers if t.endswith(".NS") or t.endswith(".BO")) >= len(tickers)/2 else "US"
-_currency = "₹" if _market == "IN" else "$"
-_rf_rate  = 0.065 if _market == "IN" else 0.05
+    result       = load_and_validate_csv(uploaded_file)
+    transactions = result[0] if isinstance(result, tuple) else result
+    if transactions is None or transactions.empty:
+        st.error("Uploaded file contains no valid data."); st.stop()
+    for col in ("Ticker", "Date", "Action", "Quantity", "Price"):
+        if col not in transactions.columns:
+            st.error(f"'{col}' column missing."); st.stop()
 
+    # Aggregate transactions → current open holdings
+    df = aggregate_holdings(transactions)
+    if df is None or df.empty:
+        st.error("No open positions found after aggregating transactions."); st.stop()
+
+    tickers       = df["Ticker"].unique().tolist()
+    tickers_tuple = tuple(tickers)
+
+    # Market detection
+    _market   = "IN" if sum(1 for t in tickers if t.endswith(".NS") or t.endswith(".BO")) >= len(tickers)/2 else "US"
+    _currency = "₹" if _market == "IN" else "$"
+    _rf_rate  = 0.065 if _market == "IN" else 0.05
+
+    with st.spinner("Fetching market data…"):
+        price_data = cached_fetch_market_data(tickers_tuple, lookback)
+    if price_data is None or price_data.empty:
+        st.error("Unable to fetch price data."); st.stop()
+
+    returns = compute_returns(price_data)
+    if returns is None or returns.empty:
+        st.error("Return computation failed."); st.stop()
+
+    # Live prices & market values
+    prices_info         = get_latest_prices(price_data, tickers)
+    df["Current Price"] = df["Ticker"].map(lambda t: prices_info.get(t, (np.nan, False))[0])
+    df["_Price Cached"] = df["Ticker"].map(lambda t: prices_info.get(t, (np.nan, False))[1])
+    df["Market Value"]  = df["Current Price"] * df["Quantity"]
+    total_value         = df["Market Value"].sum()
+    if total_value <= 0:
+        st.error("Portfolio value invalid."); st.stop()
+
+    df["Current Weight"] = df["Market Value"] / total_value
+    df["Unrealised P/L"] = df["Market Value"] - df["Total Cost"]
+    df["P/L %"]          = np.where(df["Total Cost"] != 0, df["Unrealised P/L"] / df["Total Cost"], 0)
+
+    # P/L summary
+    pl_summary      = compute_pl_summary(df, total_value)
+    amount_invested = pl_summary["total_cost"]
+    unrealized_gain = pl_summary["unrealised_pl"]
+    realised_gain   = pl_summary["realised_pl"]
+
+    # XIRR
+    portfolio_xirr = compute_xirr(transactions, total_value)
+
+    weights_series    = df.groupby("Ticker")["Current Weight"].sum().reindex(returns.columns).fillna(0)
+    portfolio_returns = returns @ weights_series.values
+
+    # Benchmark — stored separately so it can be refreshed without full reload
+    benchmark_returns = None   # placeholder; computed below outside this block
+
+    # Risk analytics (benchmark-independent parts)
+    with st.spinner("Running risk analytics…"):
+        drawdown_series = compute_drawdown_series(portfolio_returns)
+        try:
+            frontier = simulate_efficient_frontier(returns, risk_profile)
+        except Exception:
+            frontier = None
+
+    # Metadata
+    with st.spinner("Loading ticker metadata…"):
+        metadata = fetch_ticker_metadata(tickers_tuple)
+    df["Name"]       = df["Ticker"].map(metadata["Name"])
+    df["Sector"]     = df["Ticker"].map(metadata["Sector"])
+    df["Asset Type"] = df["Ticker"].map(metadata["Asset Type"])
+
+    regime, regime_color, latest_vol = detect_vol_regime(portfolio_returns)
+
+    # ── Store everything in session_state ──────────────────
+    st.session_state["_portfolio_cache"] = {
+        "transactions":    transactions,
+        "df":              df,
+        "tickers":         tickers,
+        "tickers_tuple":   tickers_tuple,
+        "_market":         _market,
+        "_currency":       _currency,
+        "_rf_rate":        _rf_rate,
+        "price_data":      price_data,
+        "returns":         returns,
+        "total_value":     total_value,
+        "amount_invested": amount_invested,
+        "unrealized_gain": unrealized_gain,
+        "realised_gain":   realised_gain,
+        "portfolio_xirr":  portfolio_xirr,
+        "weights_series":  weights_series,
+        "portfolio_returns": portfolio_returns,
+        "risk_summary":    {},          # populated after benchmark load below
+        "drawdown_series": drawdown_series,
+        "frontier":        frontier,
+        "health_score":    0,           # computed after benchmark load
+        "regime":          regime,
+        "regime_color":    regime_color,
+        "latest_vol":      latest_vol,
+    }
+    st.session_state["data_loaded"] = True
+
+# ── Read everything from cache ──────────────────────────────
+_cache           = st.session_state["_portfolio_cache"]
+transactions     = _cache["transactions"]
+df               = _cache["df"]
+tickers          = _cache["tickers"]
+tickers_tuple    = _cache["tickers_tuple"]
+_market          = _cache["_market"]
+_currency        = _cache["_currency"]
+_rf_rate         = _cache["_rf_rate"]
+price_data       = _cache["price_data"]
+returns          = _cache["returns"]
+total_value      = _cache["total_value"]
+amount_invested  = _cache["amount_invested"]
+unrealized_gain  = _cache["unrealized_gain"]
+realised_gain    = _cache["realised_gain"]
+portfolio_xirr   = _cache["portfolio_xirr"]
+weights_series   = _cache["weights_series"]
+portfolio_returns= _cache["portfolio_returns"]
+risk_summary     = _cache["risk_summary"]
+drawdown_series  = _cache["drawdown_series"]
+frontier         = _cache["frontier"]
+health_score     = _cache["health_score"]
+regime           = _cache["regime"]
+regime_color     = _cache["regime_color"]
+latest_vol       = _cache["latest_vol"]
+
+# ── Benchmark fetch — separate cache, refreshes on ticker change ───────────
+_bm_keys_required = {"benchmark_returns", "risk_summary", "health_score"}
+if "_benchmark_cache" not in st.session_state or not _bm_keys_required.issubset(st.session_state.get("_benchmark_cache", {})):
+    with st.spinner(f"Fetching benchmark data ({benchmark})…"):
+        _bm_data = cached_fetch_market_data((benchmark,), lookback)
+    _benchmark_returns = None
+    if _bm_data is not None and not _bm_data.empty:
+        _bm_ret = compute_returns(_bm_data)
+        if _bm_ret is not None and not _bm_ret.empty:
+            _benchmark_returns = _bm_ret.iloc[:, 0]
+            _aligned = pd.concat([portfolio_returns.rename("Portfolio"),
+                                   _benchmark_returns.rename("Benchmark")], axis=1).dropna()
+            if not _aligned.empty:
+                _benchmark_returns = _aligned["Benchmark"]
+    _risk_summary = generate_risk_summary(portfolio_returns, _benchmark_returns)
+    _health_score = portfolio_health_score(
+        weights_series, _risk_summary.get("Sharpe Ratio", 0), _risk_summary.get("Max Drawdown", 0))
+    st.session_state["_benchmark_cache"] = {
+        "benchmark_returns": _benchmark_returns,
+        "risk_summary":      _risk_summary,
+        "health_score":      _health_score,
+    }
+
+benchmark_returns = st.session_state["_benchmark_cache"]["benchmark_returns"]
+risk_summary      = st.session_state["_benchmark_cache"]["risk_summary"]
+health_score      = st.session_state["_benchmark_cache"]["health_score"]
+# Keep main cache in sync
+st.session_state["_portfolio_cache"]["risk_summary"] = risk_summary
+st.session_state["_portfolio_cache"]["health_score"] = health_score
+
+# ── Sidebar market badge ────────────────────────────────────
 with st.sidebar:
     _flag = "🇮🇳" if _market == "IN" else "🇺🇸"
     st.markdown(
@@ -595,86 +867,15 @@ with st.sidebar:
         f"{'Indian' if _market=='IN' else 'US'} Market</strong> &nbsp;·&nbsp; {_currency}</div>",
         unsafe_allow_html=True)
 
-COST_COLUMN_CANDIDATES = ["Buy Price","Avg Cost","Avg. Cost","Average Cost"]
-cost_col = next((c for c in COST_COLUMN_CANDIDATES if c in df.columns), None)
-if cost_col:
-    df[cost_col] = pd.to_numeric(df[cost_col].astype(str).str.replace(r"[^\d.]","",regex=True), errors="coerce")
-
-_first_load = "data_loaded" not in st.session_state
-
-def _spinner_fetch(label, fn):
-    if _first_load:
-        with st.spinner(label): return fn()
-    return fn()
-
-price_data = _spinner_fetch("Fetching market data…", lambda: cached_fetch_market_data(tickers_tuple, lookback))
-if price_data is None or price_data.empty: st.error("Unable to fetch price data."); st.stop()
-
-returns = compute_returns(price_data)
-if returns is None or returns.empty: st.error("Return computation failed."); st.stop()
-
-# Portfolio construction
-prices_info          = get_latest_prices(price_data, tickers)
-df["Current Price"]  = df["Ticker"].map(lambda t: prices_info.get(t,(np.nan,False))[0])
-df["_Price Cached"]  = df["Ticker"].map(lambda t: prices_info.get(t,(np.nan,False))[1])
-df["Market Value"]   = df["Current Price"] * df["Quantity"]
-total_value          = df["Market Value"].sum()
-if total_value <= 0: st.error("Portfolio value invalid."); st.stop()
-
-df["Current Weight"] = df["Market Value"] / total_value
-
-amount_invested, unrealized_gain = 0, 0
-if cost_col:
-    df["Total Cost"] = df["Quantity"] * df[cost_col]
-    df["Total P/L"]  = df["Market Value"] - df["Total Cost"]
-    df["P/L %"]      = np.where(df["Total Cost"]!=0, df["Total P/L"]/df["Total Cost"], 0)
-    amount_invested  = df["Total Cost"].sum()
-    unrealized_gain  = total_value - amount_invested
-
-weights_series    = df.set_index("Ticker")["Current Weight"].reindex(returns.columns).fillna(0)
-portfolio_returns = returns @ weights_series.values
-
-# Benchmark
-benchmark_data    = _spinner_fetch("Fetching benchmark data…", lambda: cached_fetch_market_data((benchmark,), lookback))
-benchmark_returns = None
-if benchmark_data is not None and not benchmark_data.empty:
-    bm_ret = compute_returns(benchmark_data)
-    if bm_ret is not None and not bm_ret.empty:
-        benchmark_returns = bm_ret.iloc[:,0]
-        aligned = pd.concat([portfolio_returns.rename("Portfolio"),
-                              benchmark_returns.rename("Benchmark")], axis=1).dropna()
-        if not aligned.empty:
-            portfolio_returns = aligned["Portfolio"]
-            benchmark_returns = aligned["Benchmark"]
-
-# ── Step 1: Risk analytics — only computed once per portfolio load ──────
-if "risk_summary" not in st.session_state:
-    with st.spinner("Running risk analytics…"):
-        st.session_state["risk_summary"]    = generate_risk_summary(portfolio_returns, benchmark_returns)
-        st.session_state["drawdown_series"] = compute_drawdown_series(portfolio_returns)
-        try:
-            st.session_state["frontier"] = simulate_efficient_frontier(returns, risk_profile)
-        except Exception:
-            st.session_state["frontier"] = None
-
-risk_summary    = st.session_state["risk_summary"]
-drawdown_series = st.session_state["drawdown_series"]
-frontier        = st.session_state["frontier"]
-
-# opt_method and bl_views are set inside Tab 3 via session state.
-# Read them here so the rest of the page (PDF, rebalancing) can use the current value.
+# ── Optimizer — re-run only when method/profile/max_weight changes ──
 opt_method = st.session_state.get("opt_method", "Max Sharpe")
-bl_views   = st.session_state.get("bl_views", {})
-
-# ── Step 2: Optimizer — re-run whenever method, profile or max_weight changes
-_opt_key = (opt_method, risk_profile, max_weight, str(sorted(bl_views.items())))
+_opt_key   = (opt_method, risk_profile, max_weight)
 if st.session_state.get("_opt_key") != _opt_key:
     with st.spinner(f"Running {opt_method} optimisation…"):
         try:
             optimal_weights = optimize_portfolio(
                 returns, risk_profile=risk_profile, method=opt_method,
                 max_weight=max_weight,
-                views=bl_views if opt_method == "Black-Litterman" else None,
             )
         except Exception:
             optimal_weights = None
@@ -683,61 +884,43 @@ if st.session_state.get("_opt_key") != _opt_key:
 else:
     optimal_weights = st.session_state.get("optimal_weights")
 
-health_score = portfolio_health_score(
-    weights_series, risk_summary.get("Sharpe Ratio",0), risk_summary.get("Max Drawdown",0))
-regime, regime_color, latest_vol = detect_vol_regime(portfolio_returns)
-
-# Metadata
-metadata     = _spinner_fetch("Loading ticker metadata…", lambda: fetch_ticker_metadata(tickers_tuple))
-df["Name"]   = df["Ticker"].map(metadata["Name"])
-df["Sector"] = df["Ticker"].map(metadata["Sector"])
-st.session_state["data_loaded"] = True
-
-# Pre-compute PDF data
-mvo_table_pdf, rule_table_pdf, enhancements_pdf = None, None, None
-try:
-    if optimal_weights is not None:
-        with st.spinner("Preparing rebalance data…"):
-            pm_df = cached_3m_relative_performance(tickers_tuple)
-            mvo_table_pdf, rule_table_pdf, _, _ = generate_rebalance_tables(
-                holdings_df=df, optimal_weights=optimal_weights, weights_series=weights_series,
-                portfolio_metrics_df=pm_df, transaction_cost=transaction_cost, portfolio_value=total_value)
-except Exception: pass
-try:
-    with st.spinner("Preparing enhancement data…"):
-        enhancements_pdf = cached_enhancement_recommendations()
-except Exception: pass
-
-# ── PDF download button ────────────────────────────────────
-col_pdf, _ = st.columns([1,5])
+# ── PDF download — generated lazily only when button clicked ──
+col_pdf, _ = st.columns([1, 5])
 with col_pdf:
-    pdf_bytes = generate_portfolio_pdf(
-        df, risk_summary, weights_series, optimal_weights,
-        curr_ret  = weights_series @ (returns.mean()*252),
-        curr_vol  = float(np.sqrt(weights_series @ (returns.cov()*252) @ weights_series)),
-        opt_ret   = float(optimal_weights @ (returns.mean()*252)) if optimal_weights is not None else 0,
-        opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov()*252) @ optimal_weights)) if optimal_weights is not None else 0,
-        opt_method        = opt_method,
-        health_score      = health_score,
-        portfolio_returns = portfolio_returns,
-        benchmark_returns = benchmark_returns,
-        mvo_table         = mvo_table_pdf,
-        rule_table        = rule_table_pdf,
-        enhancements      = enhancements_pdf,
-        currency          = _currency,
-    )
-    st.download_button("📥 Download PDF Report", data=pdf_bytes,
-        file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-        mime="application/pdf")
+    if st.button("📥 Download PDF Report"):
+        with st.spinner("Generating PDF…"):
+            try:
+                enhancements_pdf = cached_enhancement_recommendations()
+            except Exception:
+                enhancements_pdf = None
+            pdf_bytes = generate_portfolio_pdf(
+                df, risk_summary, weights_series, optimal_weights,
+                curr_ret  = weights_series @ (returns.mean() * 252),
+                curr_vol  = float(np.sqrt(weights_series @ (returns.cov() * 252) @ weights_series)),
+                opt_ret   = float(optimal_weights @ (returns.mean() * 252)) if optimal_weights is not None else 0,
+                opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov() * 252) @ optimal_weights)) if optimal_weights is not None else 0,
+                opt_method        = opt_method,
+                health_score      = health_score,
+                portfolio_returns = portfolio_returns,
+                benchmark_returns = benchmark_returns,
+                enhancements      = enhancements_pdf,
+                currency          = _currency,
+            )
+        st.download_button(
+            "📄 Click to Download",
+            data=pdf_bytes,
+            file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mime="application/pdf",
+        )
 
 
 # ==========================================================
 # TABS
 # ==========================================================
 
-tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs([
+tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
     "📊  Overview","⚠️  Risk","🎯  Optimization",
-    "📈  Performance","🔍  Asset Analytics","⚖️  Rebalancing","✨  Enhancement",
+    "📈  Performance","🔍  Asset Analytics","✨  Enhancement",
 ])
 
 
@@ -751,17 +934,17 @@ with tab1:
       <div>
         <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
             color:{regime_color};margin-bottom:5px;">Volatility Regime</div>
-        <div style="font-size:22px;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em;">{regime}</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text-primary);letter-spacing:-0.02em;">{regime}</div>
       </div>
       <div style="text-align:center;">
         <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-            color:#64748b;margin-bottom:5px;">Current Vol</div>
-        <div style="font-size:22px;font-weight:700;color:#e2e8f0;">{latest_vol:.1%}</div>
+            color:var(--text-muted);margin-bottom:5px;">Current Vol</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text-primary);">{latest_vol:.1%}</div>
       </div>
       <div style="text-align:right;">
         <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-            color:#64748b;margin-bottom:5px;">Health Score</div>
-        <div style="font-size:22px;font-weight:700;color:#e2e8f0;">{health_score}</div>
+            color:var(--text-muted);margin-bottom:5px;">Health Score</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text-primary);">{health_score}</div>
       </div>
     </div>""", unsafe_allow_html=True)
 
@@ -773,13 +956,16 @@ with tab1:
     c4.metric("Max Drawdown",    f"{risk_summary['Max Drawdown']:.2%}")
     c5.metric("Beta",            f"{risk_summary.get('Beta',0):.2f}")
 
-    if cost_col:
-        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-        cA, cB = st.columns(2)
-        cA.metric("Amount Invested", f"{_currency}{amount_invested:,.0f}")
-        pl_pct = (unrealized_gain/amount_invested) if amount_invested > 0 else None
-        cB.metric("Unrealized P/L", f"{_currency}{unrealized_gain:,.0f}",
-                  delta=f"{pl_pct:.2%}" if pl_pct is not None else None)
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    section_header("Returns & P/L")
+    cA, cB, cC, cD = st.columns(4)
+    xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr is not None and not np.isnan(portfolio_xirr) else "N/A"
+    cA.metric("XIRR (Portfolio)", xirr_display)
+    cB.metric("Amount Invested",  f"{_currency}{amount_invested:,.0f}")
+    unreal_pct = (unrealized_gain / amount_invested) if amount_invested > 0 else None
+    cC.metric("Unrealised P/L",   f"{_currency}{unrealized_gain:,.0f}",
+              delta=f"{unreal_pct:.2%}" if unreal_pct is not None else None)
+    cD.metric("Realised P/L",     f"{_currency}{realised_gain:,.0f}")
 
     section_header("Drawdown Trend")
     fig_dd = px.area(drawdown_series.tail(120), color_discrete_sequence=["#ef4444"])
@@ -789,21 +975,21 @@ with tab1:
     section_header("Allocation")
     cX, cY = st.columns(2)
     with cX:
-        if "Asset Type" in df.columns:
-            fig = px.pie(df.groupby("Asset Type")["Market Value"].sum().reset_index(),
-                         names="Asset Type", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18",width=2)))
+        at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
+        if not at.empty:
+            fig = px.pie(at, names="Asset Type", values="Market Value", hole=0.65)
+            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#ffffff" if _light else "#080d18",width=2)))
             fig.update_layout(title=dict(text="Asset Allocation",x=0.5), height=380,
                               margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            empty_state("📦","No Asset Type column","Add an 'Asset Type' column to your CSV")
+            empty_state("📦","Asset type data unavailable","Could not classify asset types")
 
     with cY:
         sa = df[df["Sector"]!="Unknown"].groupby("Sector")["Market Value"].sum().reset_index()
         if not sa.empty:
             fig = px.pie(sa, names="Sector", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18",width=2)))
+            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#ffffff" if _light else "#080d18",width=2)))
             fig.update_layout(title=dict(text="Sector Allocation",x=0.5), height=380,
                               margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
             st.plotly_chart(fig, use_container_width=True)
@@ -815,38 +1001,36 @@ with tab1:
     if cached_count > 0:
         st.warning(f"⏱️ {cached_count} price(s) using cached values. Refresh to update.", icon="⏱️")
 
-    if cost_col:
-        holdings = df[["Ticker","Name","Quantity",cost_col,"Current Price",
-                        "Current Weight","Total P/L","P/L %"]].copy()
-        holdings.columns = ["Ticker","Name","Shares","Avg Cost","Current Price",
-                             "Weight","Unrealized P/L","P/L %"]
-        holdings = holdings.sort_values("Weight", ascending=False).reset_index(drop=True)
-        holdings.index += 1
+    holdings_display = df[["Ticker", "Quantity", "Avg Cost", "Current Price",
+                            "Current Weight", "Unrealised P/L", "P/L %"]].copy()
+    holdings_display = holdings_display.sort_values("Current Weight", ascending=False).reset_index(drop=True)
+    holdings_display.index += 1
 
-        def _cache_tag(t):
-            row = df[df["Ticker"]==t]["_Price Cached"].values
-            return f"{t} ⏱️" if len(row) > 0 and row[0] else t
-        holdings["Ticker"] = holdings["Ticker"].apply(_cache_tag)
+    def _cache_tag(t):
+        row = df[df["Ticker"] == t]["_Price Cached"].values
+        return f"{t} ⏱️" if len(row) > 0 and row[0] else t
+    holdings_display["Ticker"] = holdings_display["Ticker"].apply(_cache_tag)
 
-        styled = style_pl(holdings, ["Unrealized P/L","P/L %"]).format({
-            "Avg Cost":       f"{_currency}{{:,.2f}}",
-            "Current Price":  f"{_currency}{{:,.2f}}",
-            "Unrealized P/L": f"{_currency}{{:,.2f}}",
-            "Weight":         "{:.2%}",
-            "P/L %":          "{:.2%}",
-        })
-        st.dataframe(styled, use_container_width=True)
-    else:
-        empty_state("💰","No cost data detected","Add a 'Buy Price' or 'Avg Cost' column for P&L analysis")
+    styled = style_pl(holdings_display, ["Unrealised P/L", "P/L %"]).format({
+        "Avg Cost":      f"{_currency}{{:,.2f}}",
+        "Current Price": f"{_currency}{{:,.2f}}",
+        "Unrealised P/L":f"{_currency}{{:,.2f}}",
+        "Current Weight":"{:.2%}",
+        "P/L %":         "{:.2%}",
+    })
+    st.dataframe(styled, use_container_width=True)
 
 
 # ── TAB 2: RISK ────────────────────────────────────────────
 with tab2:
+
+    # ── Risk Summary ───────────────────────────────────────
     section_header("Risk Summary")
     pct_fields = {"Annual Return","Volatility","Max Drawdown","VaR 95%","CVaR 95%","Tracking Error","Correlation"}
     st.table(pd.DataFrame({k: f"{v:.2%}" if k in pct_fields else f"{v:.2f}"
                             for k,v in risk_summary.items()}.items(), columns=["Metric","Value"]))
 
+    # ── Rolling charts ─────────────────────────────────────
     c1, c2 = st.columns(2)
     with c1:
         section_header("Rolling Volatility")
@@ -862,6 +1046,140 @@ with tab2:
         else:
             empty_state("📉","No benchmark data","Benchmark returns could not be fetched")
 
+    # ── VaR / CVaR ─────────────────────────────────────────
+    section_header("Value at Risk & Expected Shortfall")
+
+    _vc = var_cvar_summary(portfolio_returns)
+
+    # Metric cards — 4 columns, 95% and 99%
+    v1,v2,v3,v4 = st.columns(4)
+    v1.metric("Hist. VaR 95%",   f"{_vc['hist_var_95']:.2%}",  help="Worst daily loss exceeded on 5% of trading days (historical)")
+    v2.metric("Hist. CVaR 95%",  f"{_vc['hist_cvar_95']:.2%}", help="Average loss on the worst 5% of days (Expected Shortfall)")
+    v3.metric("Hist. VaR 99%",   f"{_vc['hist_var_99']:.2%}",  help="Worst daily loss exceeded on 1% of trading days (historical)")
+    v4.metric("Hist. CVaR 99%",  f"{_vc['hist_cvar_99']:.2%}", help="Average loss on the worst 1% of days (Expected Shortfall)")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    v5,v6,v7,v8 = st.columns(4)
+    v5.metric("Param. VaR 95%",  f"{_vc['param_var_95']:.2%}",  help="Gaussian VaR 95% — assumes normally distributed returns")
+    v6.metric("Param. CVaR 95%", f"{_vc['param_cvar_95']:.2%}", help="Gaussian CVaR 95%")
+    v7.metric("Param. VaR 99%",  f"{_vc['param_var_99']:.2%}",  help="Gaussian VaR 99%")
+    v8.metric("Param. CVaR 99%", f"{_vc['param_cvar_99']:.2%}", help="Gaussian CVaR 99%")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # Return distribution chart with VaR/CVaR overlays
+    section_header("Return Distribution")
+    _ret_clean = portfolio_returns.dropna()
+    _hist_fig  = go.Figure()
+
+    # Histogram of daily returns
+    _hist_fig.add_trace(go.Histogram(
+        x=_ret_clean, nbinsx=80, name="Daily Returns",
+        marker_color="#3b82f6", opacity=0.6,
+        hovertemplate="Return: %{x:.2%}<br>Count: %{y}<extra></extra>",
+    ))
+
+    # Overlay normal distribution curve
+    import scipy.stats as _stats
+    _mu, _sigma = _ret_clean.mean(), _ret_clean.std()
+    _x_range = np.linspace(_ret_clean.min(), _ret_clean.max(), 300)
+    _pdf     = _stats.norm.pdf(_x_range, _mu, _sigma)
+    _scale   = len(_ret_clean) * (_ret_clean.max() - _ret_clean.min()) / 80
+    _hist_fig.add_trace(go.Scatter(
+        x=_x_range, y=_pdf * _scale, name="Normal Fit",
+        line=dict(color="#94a3b8", width=2, dash="dot"),
+        hovertemplate="Return: %{x:.2%}<extra>Normal Fit</extra>",
+    ))
+
+    # VaR lines
+    for _label, _val, _color in [
+        ("VaR 95%",  _vc["hist_var_95"],  "#f59e0b"),
+        ("CVaR 95%", _vc["hist_cvar_95"], "#ef4444"),
+        ("VaR 99%",  _vc["hist_var_99"],  "#8b5cf6"),
+    ]:
+        _hist_fig.add_vline(
+            x=_val, line_dash="dash", line_color=_color, line_width=1.5,
+            annotation_text=f"{_label}: {_val:.2%}",
+            annotation_position="top left",
+            annotation_font=dict(size=10, color=_color),
+        )
+
+    _hist_fig.update_layout(
+        height=340, margin=dict(l=0,r=0,t=10,b=0),
+        xaxis=dict(tickformat=".1%", title="Daily Return"),
+        yaxis_title="Frequency",
+        showlegend=True,
+        bargap=0.05,
+    )
+    st.plotly_chart(_hist_fig, use_container_width=True)
+
+    # ── Concentration Analytics ────────────────────────────
+    section_header("Concentration & Diversification")
+
+    _eff_n  = effective_n(weights_series)
+    _hhi    = float((weights_series ** 2).sum())
+    _top1   = float(weights_series.max())
+    _top3   = float(weights_series.nlargest(3).sum())
+
+    cx1,cx2,cx3,cx4 = st.columns(4)
+    cx1.metric("Effective Positions", f"{_eff_n:.1f}",
+               help="1/HHI — equivalent number of equal-weight positions with same concentration")
+    cx2.metric("HHI",                 f"{_hhi:.4f}",
+               help="Herfindahl-Hirschman Index. <0.15 = diversified, >0.25 = concentrated")
+    cx3.metric("Largest Position",    f"{_top1:.2%}")
+    cx4.metric("Top 3 Concentration", f"{_top3:.2%}")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # Sector breakdown
+    if "Sector" in df.columns:
+        _sec_df  = sector_concentration(df)
+        _type_df = asset_type_concentration(df)
+
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            section_header("Sector Breakdown")
+            # Treemap
+            _sec_fig = px.treemap(
+                _sec_df, path=["Sector"], values="Weight",
+                color="Weight", color_continuous_scale="Blues",
+                custom_data=["Holdings"],
+            )
+            _sec_fig.update_traces(
+                texttemplate="<b>%{label}</b><br>%{value:.1%}",
+                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<br>Holdings: %{customdata[0]}<extra></extra>",
+            )
+            _sec_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
+                                   coloraxis_showscale=False)
+            st.plotly_chart(_sec_fig, use_container_width=True)
+
+            # Table underneath
+            _sec_display = _sec_df[["Sector","Weight","Holdings","% of HHI"]].copy()
+            _sec_display["Weight"]    = _sec_display["Weight"].map("{:.2%}".format)
+            _sec_display["% of HHI"] = _sec_display["% of HHI"].map("{:.1%}".format)
+            st.dataframe(_sec_display.set_index("Sector"), use_container_width=True)
+
+        with sc2:
+            section_header("Asset Type Breakdown")
+            _type_fig = px.pie(
+                _type_df, names="Asset Type", values="Weight",
+                color_discrete_sequence=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4"],
+                hole=0.45,
+            )
+            _type_fig.update_traces(
+                texttemplate="%{label}<br>%{percent}",
+                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
+            )
+            _type_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
+                                    showlegend=True,
+                                    legend=dict(orientation="h",yanchor="bottom",y=-0.15))
+            st.plotly_chart(_type_fig, use_container_width=True)
+
+            _type_display = _type_df.copy()
+            _type_display["Weight"] = _type_display["Weight"].map("{:.2%}".format)
+            st.dataframe(_type_display.set_index("Asset Type"), use_container_width=True)
+
+    # ── Correlation Matrix ─────────────────────────────────
     if returns.shape[1] > 1:
         section_header("Asset Correlation Matrix")
         fig = px.imshow(returns.corr(), text_auto=".2f", color_continuous_scale="RdBu_r",
@@ -891,10 +1209,6 @@ with tab3:
         "Equal Weight":        {"icon":"🔢","tagline":"Simple 1/N baseline",
             "desc":"Allocates equally to every holding. Requires no estimates and is surprisingly hard "
                    "to beat consistently — a useful benchmark against which to judge every other method."},
-        "Black-Litterman":     {"icon":"🧠","tagline":"Equilibrium + your views",
-            "desc":"Blends market-equilibrium (inverse-variance proxy) returns with your return views "
-                   "using the classic BL posterior formula. Reduces estimation error vs raw MVO. "
-                   "Enter views per ticker below."},
     }
 
     section_header("Optimisation Method")
@@ -916,27 +1230,6 @@ with tab3:
     )
 
     opt_method = st.session_state.get("opt_method", "Max Sharpe")
-
-    # ── Black-Litterman view inputs ────────────────────────
-    bl_views = {}
-    if opt_method == "Black-Litterman":
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        section_header("Return Views (optional)")
-        st.caption("Enter your expected annual return for any ticker. Leave blank to use market equilibrium.")
-        cols = st.columns(min(len(tickers), 4))
-        for i, ticker in enumerate(tickers):
-            view_val = cols[i % len(cols)].text_input(
-                f"{ticker} (%)", value="", key=f"bl_view_{ticker}", placeholder="e.g. 12"
-            )
-            if view_val.strip():
-                try: bl_views[ticker] = float(view_val.strip().replace("%","")) / 100
-                except ValueError: pass
-        if bl_views != st.session_state.get("bl_views", {}):
-            st.session_state["bl_views"] = bl_views
-            st.session_state.pop("_opt_key", None)
-    else:
-        st.session_state["bl_views"] = {}
-        bl_views = {}
 
     # Method info card
     info = METHOD_INFO.get(opt_method, {})
@@ -970,22 +1263,91 @@ with tab3:
         c5.metric("Optimized Volatility", f"{opt_vol:.2%}",    delta=f"{opt_vol-curr_vol:.2%}")
         c6.metric("Optimized Sharpe",     f"{opt_sharpe:.2f}", delta=f"{opt_sharpe-curr_sharpe:.2f}")
 
-        # ── Weight comparison ──────────────────────────────
-        section_header("Weight Comparison")
+        # ── Weight comparison + trade instructions ────────
+        section_header("Weight Comparison & Trade Instructions")
+
+        # Build price & quantity lookup from holdings df
+        _price_map = df.set_index("Ticker")["Current Price"].to_dict()
+        _qty_map   = df.set_index("Ticker")["Quantity"].to_dict()
+
         wt_df = pd.DataFrame({
             "Current Weight":   weights_series.reindex(optimal_weights.index).fillna(0),
             "Optimized Weight": optimal_weights,
         })
         wt_df["Change"] = wt_df["Optimized Weight"] - wt_df["Current Weight"]
         wt_df = wt_df.sort_values("Optimized Weight", ascending=False)
+
+        # Trade instruction columns
+        _trades = []
+        for ticker in wt_df.index:
+            _price        = _price_map.get(ticker, np.nan)
+            _cur_qty      = float(_qty_map.get(ticker, 0))
+            _opt_weight   = float(wt_df.loc[ticker, "Optimized Weight"])
+            _target_value = _opt_weight * total_value
+            _target_qty   = (_target_value / _price) if (pd.notna(_price) and _price > 0) else np.nan
+            _delta_qty    = (_target_qty - _cur_qty)  if pd.notna(_target_qty) else np.nan
+
+            # Round to whole shares
+            _delta_qty_r  = round(_delta_qty)  if pd.notna(_delta_qty)  else np.nan
+            _target_qty_r = round(_target_qty) if pd.notna(_target_qty) else np.nan
+            _cur_qty_r    = round(_cur_qty)
+
+            if pd.isna(_delta_qty_r):
+                _action = "N/A"
+                _shares = "N/A"
+            elif abs(_delta_qty_r) < 1:           # ignore sub-share noise
+                _action = "Hold"
+                _shares = "—"
+            elif _delta_qty_r > 0:
+                _action = "Buy"
+                _shares = f"+{_delta_qty_r:,.0f}"
+            else:
+                _action = "Sell"
+                _shares = f"{_delta_qty_r:,.0f}"
+
+            _trades.append({
+                "Action":         _action,
+                "Shares":         _shares,
+                "Current Qty":    f"{_cur_qty_r:,.0f}",
+                "Target Qty":     f"{_target_qty_r:,.0f}" if pd.notna(_target_qty_r) else "N/A",
+                "Current Price":  f"{_currency}{_price:,.2f}" if pd.notna(_price) else "N/A",
+            })
+
+        _trade_df = pd.DataFrame(_trades, index=wt_df.index)
+        wt_df = pd.concat([wt_df, _trade_df], axis=1)
+
+        # Colour-code the Action column
+        def _style_action(val):
+            if val == "Buy":  return "color: #22c55e; font-weight:600"
+            if val == "Sell": return "color: #ef4444; font-weight:600"
+            if val == "Hold": return "color: #94a3b8"
+            return ""
+
         st.dataframe(
-            style_pl(wt_df, ["Change"]).format({
+            style_pl(wt_df, ["Change"])
+            .format({
                 "Current Weight":   "{:.2%}",
                 "Optimized Weight": "{:.2%}",
                 "Change":           "{:+.2%}",
-            }),
+            })
+            .applymap(_style_action, subset=["Action"]),
             use_container_width=True,
         )
+
+        # Turnover summary
+        _turnover     = float(wt_df["Change"].abs().sum() / 2)
+        _cost_pct     = _turnover * DEFAULT_TRANSACTION_COST
+        _cost_value   = _cost_pct * total_value
+        _buy_count    = (_trade_df["Action"] == "Buy").sum()
+        _sell_count   = (_trade_df["Action"] == "Sell").sum()
+        _hold_count   = (_trade_df["Action"] == "Hold").sum()
+
+        ts1,ts2,ts3,ts4,ts5 = st.columns(5)
+        ts1.metric("Portfolio Turnover",   f"{_turnover:.2%}")
+        ts2.metric("Est. Transaction Cost",f"{_currency}{_cost_value:,.0f}", help=f"{_cost_pct:.3%} of AUM")
+        ts3.metric("Buys",                 str(_buy_count),  delta=None)
+        ts4.metric("Sells",                str(_sell_count), delta=None)
+        ts5.metric("Holds",                str(_hold_count), delta=None)
 
         # ── Weight bar chart ───────────────────────────────
         wt_bar = pd.DataFrame({
@@ -1034,23 +1396,14 @@ with tab3:
             d1.metric("Current DR",   f"{dr_cur:.3f}")
             d2.metric("Optimized DR", f"{dr_opt:.3f}", delta=f"{dr_opt-dr_cur:+.3f}")
 
-        # ── Black-Litterman: view summary ─────────────────
-        if opt_method == "Black-Litterman" and bl_views:
-            section_header("Active Views")
-            view_df = pd.DataFrame([
-                {"Ticker": t, "Your View (Ann.)": f"{v:.2%}"}
-                for t, v in bl_views.items()
-            ])
-            st.dataframe(view_df.set_index("Ticker"), use_container_width=True)
-
         # ── Efficient frontier ─────────────────────────────
         section_header("Efficient Frontier")
         fig_f = go.Figure([
             go.Scatter(
                 x=frontier["Volatility"], y=frontier["Return"], mode="markers",
                 marker=dict(size=5, color=frontier["Sharpe"], colorscale="Blues", showscale=True,
-                            colorbar=dict(title=dict(text="Sharpe",font=dict(color="#94a3b8")),
-                                          x=1.02,thickness=14,len=0.6,tickfont=dict(color="#94a3b8"))),
+                            colorbar=dict(title=dict(text="Sharpe",font=dict(color="#334155" if _light else "#94a3b8")),
+                                          x=1.02,thickness=14,len=0.6,tickfont=dict(color="#334155" if _light else "#94a3b8"))),
                 name="Monte Carlo Simulations",
                 hovertemplate="<b>Return:</b> %{y:.2%}<br><b>Vol:</b> %{x:.2%}<extra></extra>",
             ),
@@ -1070,8 +1423,9 @@ with tab3:
         fig_f.update_layout(
             height=580, margin=dict(l=40,r=40,t=20,b=40), showlegend=True,
             legend=dict(orientation="v",yanchor="bottom",y=0.04,xanchor="left",x=0.02,
-                        bgcolor="rgba(11,17,32,0.92)",bordercolor="#3b82f6",borderwidth=1,
-                        font=dict(color="#e2e8f0",size=12)))
+                        bgcolor="rgba(255,255,255,0.92)" if _light else "rgba(11,17,32,0.92)",
+                        bordercolor="#3b82f6",borderwidth=1,
+                        font=dict(color="#0f172a" if _light else "#e2e8f0",size=12)))
         st.plotly_chart(fig_f, use_container_width=True)
 
     else:
@@ -1081,7 +1435,7 @@ with tab3:
 # ── TAB 4: PERFORMANCE ─────────────────────────────────────
 with tab4:
     section_header("Performance Metrics")
-    pm = get_performance_metrics(portfolio_returns, benchmark_returns)
+    pm = get_performance_metrics(portfolio_returns, benchmark_returns, rf_rate=_rf_rate)
 
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Total Return",      f"{pm['total_return']:.2%}")
@@ -1112,17 +1466,52 @@ with tab4:
     tf = st.radio("Timeframe",["1M","3M","6M","1Y","3Y","5Y"],horizontal=True,
                   key="perf_timeframe",label_visibility="collapsed")
 
-    cum = (1+portfolio_returns.dropna()).cumprod()-1
-    cum = slice_tf(cum, tf); cum = cum - cum.iloc[0]
+    # ── Build cumulative return series, rebased to 0 at start of window ──
+    # Use (1+r).cumprod() so we stay in price-relative space, then rebase:
+    # rebase = series / series.iloc[0] - 1  (correct ratio rebase, not subtraction)
+    cum_full = (1 + portfolio_returns.dropna()).cumprod()
+    cum      = slice_tf(cum_full, tf)
+    cum      = cum / cum.iloc[0] - 1          # rebase: 0% at window start
+
     perf_df = pd.DataFrame({"Portfolio": cum})
+
     if benchmark_returns is not None:
-        bc = (1+benchmark_returns.dropna()).cumprod()-1
-        bc = slice_tf(bc, tf); bc = bc - bc.iloc[0]
+        bc_full = (1 + benchmark_returns.dropna()).cumprod()
+        bc      = slice_tf(bc_full, tf)
+        # Align benchmark to same start date as portfolio
+        bc      = bc.reindex(cum.index, method="ffill")
+        bc      = bc / bc.iloc[0] - 1
         perf_df["Benchmark"] = bc
 
     fig = px.line(perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
     fig.update_traces(line=dict(width=2))
-    fig.update_layout(height=420, margin=dict(l=0,r=0,t=0,b=0))
+
+    # ── XIRR reference line ────────────────────────────────
+    # XIRR is an annualised cash-flow-weighted rate — project it as a straight
+    # compound growth curve anchored at 0% at the window start, so it serves
+    # as a "target pace" reference rather than a conflated return series.
+    if portfolio_xirr is not None and not np.isnan(portfolio_xirr):
+        xirr_start = cum.index[0]
+        xirr_end   = cum.index[-1]
+        xirr_dates = pd.date_range(xirr_start, xirr_end, freq="B")
+        days_from_start = (xirr_dates - xirr_start).days
+        xirr_curve      = (1 + portfolio_xirr) ** (days_from_start / 365) - 1
+
+        fig.add_scatter(
+            x=xirr_dates,
+            y=xirr_curve,
+            name=f"XIRR Pace ({portfolio_xirr:.2%} p.a.)",
+            line=dict(color="#f59e0b", width=1.5, dash="dot"),
+        )
+
+    fig.update_layout(
+        height=420,
+        margin=dict(l=0, r=0, t=0, b=0),
+        yaxis=dict(tickformat=".0%", title="Return"),
+        xaxis=dict(title="Date"),
+        hovermode="x unified",
+    )
+    fig.update_traces(hovertemplate="%{y:.2%}")
     st.plotly_chart(fig, use_container_width=True)
 
     section_header("Period Returns")
@@ -1199,111 +1588,113 @@ with tab5:
     fig.update_traces(line=dict(width=1.8))
     quick_chart(fig)
 
+    # Slice returns to the same timeframe so all charts stay in sync
+    asset_returns_tf = slice_tf(asset_returns, tf)
+
     cA, cB = st.columns(2)
     with cA:
         section_header("Rolling Volatility (60D)")
-        quick_chart(px.line(compute_rolling_volatility(asset_returns,60),
+        quick_chart(px.line(slice_tf(compute_rolling_volatility(asset_returns, 60), tf),
                             color_discrete_sequence=["#f59e0b"]), 280)
     with cB:
         section_header("Rolling Correlation with Portfolio (60D)")
-        quick_chart(px.line(compute_rolling_correlation(asset_returns,portfolio_returns,60),
+        quick_chart(px.line(slice_tf(compute_rolling_correlation(asset_returns, portfolio_returns, 60), tf),
                             color_discrete_sequence=["#8b5cf6"]), 280)
 
     section_header("Drawdown")
-    fig = px.area(compute_asset_drawdown(asset_returns), color_discrete_sequence=["#ef4444"])
+    fig = px.area(compute_asset_drawdown(asset_returns_tf), color_discrete_sequence=["#ef4444"])
     fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.1)")
     quick_chart(fig, 260)
 
     section_header("Fundamental Metrics")
     fund_df = get_asset_fundamental_table(selected_asset)
     fund_df["Metric"] = fund_df["Metric"].astype(str)
-    if not fund_df[fund_df["Metric"]=="No data available"].empty:
+    _no_data = "Category" not in fund_df.columns or (fund_df["Metric"] == "No data available").any()
+    if _no_data:
         empty_state("📊","Fundamental data unavailable",f"Could not retrieve ratios for {selected_asset}")
     else:
+        prof = fund_df[fund_df["Category"]=="Profitability"].drop(columns="Category")
+        liq  = fund_df[fund_df["Category"]=="Liquidity"].drop(columns="Category")
+        val  = fund_df[fund_df["Category"]=="Valuation"].drop(columns="Category")
+
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("<div class='section-label'>Profitability</div>", unsafe_allow_html=True)
-            prof = fund_df[fund_df["Metric"].str.contains("Margin|ROE|ROA", na=False)]
-            st.dataframe(prof.set_index("Metric"), use_container_width=True) if not prof.empty else st.caption("No data")
+            section_header("Profitability")
+            if not prof.empty:
+                st.dataframe(prof.set_index("Metric"), use_container_width=True)
+            else:
+                st.caption("No data")
         with c2:
-            st.markdown("<div class='section-label'>Valuation</div>", unsafe_allow_html=True)
-            val = fund_df[~fund_df["Metric"].str.contains("Margin|ROE|ROA|Ratio|Debt", na=False)]
-            st.dataframe(val.set_index("Metric"), use_container_width=True) if not val.empty else st.caption("No data")
-        st.markdown("<div class='section-label'>Liquidity &amp; Solvency</div>", unsafe_allow_html=True)
-        liq = fund_df[fund_df["Metric"].str.contains("Ratio|Debt", na=False)]
-        st.dataframe(liq.set_index("Metric"), use_container_width=True) if not liq.empty else st.caption("No data")
+            section_header("Valuation")
+            if not val.empty:
+                st.dataframe(val.set_index("Metric"), use_container_width=True)
+            else:
+                st.caption("No data")
+        section_header("Liquidity & Solvency")
+        if not liq.empty:
+            st.dataframe(liq.set_index("Metric"), use_container_width=True)
+        else:
+            st.caption("No data")
+
+    # ── News Feed ──────────────────────────────────────────
+    section_header(f"Latest News — {selected_asset}")
+    try:
+        _news_raw = yf.Ticker(selected_asset).news
+        if _news_raw:
+            # Filter to content items only (type == "STORY" or no type key)
+            _stories = [
+                n for n in _news_raw
+                if isinstance(n, dict) and (
+                    n.get("type", "STORY") == "STORY" or "title" in n or
+                    (isinstance(n.get("content"), dict) and n["content"].get("title"))
+                )
+            ][:8]
+
+            if _stories:
+                for _item in _stories:
+                    # yfinance v0.2.x returns nested content dict; older versions use flat keys
+                    _content = _item.get("content", _item)
+                    _title   = _content.get("title",       _item.get("title",       "No title"))
+                    _source  = _content.get("provider", {}).get("displayName", "") or _item.get("publisher", "")
+                    _url     = _content.get("canonicalUrl", {}).get("url", "") or _item.get("link", "#")
+                    _ts      = _content.get("pubDate", "") or _item.get("providerPublishTime", "")
+
+                    # Format timestamp
+                    if isinstance(_ts, (int, float)):
+                        import datetime as _dt
+                        _ts = _dt.datetime.utcfromtimestamp(_ts).strftime("%d %b %Y, %H:%M UTC")
+                    elif isinstance(_ts, str) and _ts:
+                        try:
+                            import dateutil.parser as _dp
+                            _ts = _dp.parse(_ts).strftime("%d %b %Y, %H:%M UTC")
+                        except Exception:
+                            pass
+
+                    st.markdown(f"""
+                    <div style="padding:12px 16px;margin-bottom:8px;border-radius:var(--radius);
+                        background:var(--bg-surface);border:1px solid var(--border);
+                        border-left:3px solid var(--accent);">
+                      <div style="font-size:13px;font-weight:600;color:var(--text-primary);
+                          margin-bottom:4px;line-height:1.4;">
+                        <a href="{_url}" target="_blank"
+                           style="color:var(--text-primary);text-decoration:none;">
+                          {_title}
+                        </a>
+                      </div>
+                      <div style="font-size:11px;color:var(--text-muted);">
+                        {_source}{' · ' + str(_ts) if _ts else ''}
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                empty_state("📰", "No recent news", f"No news stories found for {selected_asset}")
+        else:
+            empty_state("📰", "No recent news", f"No news stories found for {selected_asset}")
+    except Exception as _e:
+        empty_state("📰", "News unavailable", f"Could not fetch news for {selected_asset}")
 
 
-# ── TAB 6: REBALANCING ─────────────────────────────────────
+# ── TAB 6: ENHANCEMENT ─────────────────────────────────────
 with tab6:
-    st.markdown(f"""
-    <div style="padding:14px 18px;border-radius:var(--radius);background:var(--bg-surface);
-        border:1px solid var(--border);margin-bottom:24px;display:flex;gap:32px;">
-      <div>
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
-            color:var(--accent);margin-bottom:4px;">Engine 1</div>
-        <div style="font-size:13px;font-weight:500;color:var(--text-primary);">
-            {opt_method} Optimisation</div>
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
-            color:#8b5cf6;margin-bottom:4px;">Engine 2</div>
-        <div style="font-size:13px;font-weight:500;color:var(--text-primary);">
-            3-Month Relative Performance Rule</div>
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-    try:
-        with st.spinner("Computing 3M relative performance…"):
-            pm_df = cached_3m_relative_performance(tickers_tuple)
-    except Exception as e:
-        st.error(f"Failed computing 3M relative performance: {e}"); st.stop()
-
-    try:
-        mvo_table, rule_table, turnover, tc_info = generate_rebalance_tables(
-            holdings_df=df, optimal_weights=optimal_weights, weights_series=weights_series,
-            portfolio_metrics_df=pm_df, transaction_cost=transaction_cost, portfolio_value=total_value)
-    except Exception as e:
-        st.error(f"Rebalance engine failed: {e}"); st.stop()
-
-    section_header(f"{opt_method} Optimised Rebalance")
-    c1,c2,c3 = st.columns(3)
-    c1.metric("Turnover", f"{turnover:.2%}")
-    c2.metric("Transaction Cost",
-              f"{_currency}{tc_info['transaction_cost_dollar']:,.2f}" if tc_info['transaction_cost_dollar']>0
-              else f"{tc_info['transaction_cost_pct']:.3%}")
-    c3.metric("Active Position Cap", f"{max_weight_pct:.0f}%")
-
-    if not mvo_table.empty:
-        mvo_display = mvo_table.copy(); mvo_display.index += 1
-        st.dataframe(style_pl(mvo_display,["Allocation Change","Transaction Cost"]).format({
-            "Current Weight":    "{:.2%}",
-            "Optimized Weight":  "{:.2%}",
-            "Allocation Change": "{:.2%}",
-            "Transaction Cost":  "{:.3%}",
-        }), use_container_width=True)
-    else:
-        empty_state("✅","No adjustments required","Current weights are within the optimal range")
-
-    section_header("3-Month Relative Performance Rebalance")
-    if not rule_table.empty:
-        c1,c2,c3 = st.columns(3)
-        c1.metric("Buy Signals",    (rule_table["Action"]=="Buy").sum())
-        c2.metric("Sell Signals",   (rule_table["Action"]=="Sell").sum())
-        c3.metric("Hold Positions", (rule_table["Action"]=="Hold").sum())
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-        rd = rule_table.copy(); rd.index += 1
-        st.dataframe(style_pl(rd,["Relative Performance"]).format({
-            "3M Return":            "{:.2%}",
-            "Benchmark 3M":         "{:.2%}",
-            "Relative Performance": "{:.2%}",
-        }), use_container_width=True)
-    else:
-        empty_state("🎯","All holdings aligned","Every position is outperforming or matching the benchmark")
-
-
-# ── TAB 7: ENHANCEMENT ─────────────────────────────────────
-with tab7:
     st.markdown("""
     <div style="padding:14px 18px;margin-bottom:24px;border-radius:var(--radius);
         background:var(--bg-surface);border:1px solid var(--border);border-left:3px solid var(--accent);">
@@ -1314,6 +1705,40 @@ with tab7:
           Includes PE ratios and ROE. Refreshed every hour.</div>
     </div>""", unsafe_allow_html=True)
 
+    section_header("3-Month Relative Performance — Current Holdings")
+    try:
+        with st.spinner("Computing 3M relative performance…"):
+            pm_df = cached_3m_relative_performance(tickers_tuple)
+
+        def _rule_engine(x):
+            if pd.isna(x): return "No Data"
+            if x < -0.10:  return "Sell"
+            if x > 0.20:   return "Buy"
+            return "Hold"
+
+        pm_df["Action"] = pm_df["Relative Performance"].apply(_rule_engine)
+        pm_df = pm_df.sort_values("Relative Performance", ascending=False).reset_index(drop=True)
+        pm_df.index += 1
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Buy Signals",    (pm_df["Action"] == "Buy").sum())
+        c2.metric("Sell Signals",   (pm_df["Action"] == "Sell").sum())
+        c3.metric("Hold Positions", (pm_df["Action"] == "Hold").sum())
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        st.dataframe(
+            style_pl(pm_df, ["Relative Performance"]).format({
+                "3M Return":            "{:.2%}",
+                "Benchmark 3M":         "{:.2%}",
+                "Relative Performance": "{:.2%}",
+            }),
+            use_container_width=True,
+        )
+    except Exception as e:
+        st.error(f"3M relative performance computation failed: {e}")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
     with st.spinner("Analyzing sectors — may take ~15s on first load…"):
         sector_recs = cached_sector_recommendations()
 
@@ -1321,9 +1746,6 @@ with tab7:
         empty_state("🔍","No sector opportunities identified","Try again later")
     else:
         section_header("Top Sectors with Best Performers")
-        c1,c2 = st.columns(2)
-        c1.metric("Transaction Cost per Position", f"{transaction_cost_pct:.3%}")
-        c2.metric("Est. Cost per 3% Entry",        f"{0.03*transaction_cost_pct:.3%}")
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
         def _fmt(x, fn):

@@ -13,35 +13,37 @@ from config import TRADING_DAYS
 def get_performance_metrics(
     portfolio_returns: pd.Series,
     benchmark_returns: Optional[pd.Series] = None,
+    rf_rate: float = 0.05,
 ) -> Dict:
     """
     Compute comprehensive performance metrics.
-    
+
     Args:
         portfolio_returns: Portfolio return series
         benchmark_returns: Benchmark return series (optional)
-        
+        rf_rate: Risk-free rate (annualised, default 5%)
+
     Returns:
         Dictionary with performance metrics
     """
     # Cumulative returns
     portfolio_cum = (1 + portfolio_returns).cumprod() - 1
     total_return = portfolio_cum.iloc[-1] if len(portfolio_cum) > 0 else 0
-    
+
     # Annualized returns
     years = len(portfolio_returns) / TRADING_DAYS
     annualized_return = ((1 + total_return) ** (1 / years) - 1) if years > 0 else 0
-    
+
     # Volatility
     volatility = portfolio_returns.std() * np.sqrt(TRADING_DAYS)
-    
-    # Sharpe ratio
-    sharpe = (annualized_return / volatility) if volatility > 0 else 0
-    
+
+    # Sharpe ratio (risk-free rate adjusted)
+    sharpe = ((annualized_return - rf_rate) / volatility) if volatility > 0 else 0
+
     # Sortino ratio (downside deviation)
     downside = portfolio_returns[portfolio_returns < 0]
     downside_vol = (downside.std() * np.sqrt(TRADING_DAYS)) if len(downside) > 0 else 0
-    sortino = (annualized_return / downside_vol) if downside_vol > 0 else 0
+    sortino = ((annualized_return - rf_rate) / downside_vol) if downside_vol > 0 else 0
     
     # Drawdown — properly calculated as (current_value - peak_value) / peak_value
     # Convert cumulative returns to portfolio values (1 + cumulative return)

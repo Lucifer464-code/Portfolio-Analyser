@@ -90,8 +90,8 @@ def conditional_var(returns: pd.Series,
 def tracking_error(portfolio: pd.Series,
                    benchmark: pd.Series) -> float:
 
-    aligned = pd.concat([portfolio, benchmark], axis=1).dropna()
-    aligned.columns = ["Portfolio", "Benchmark"]
+    aligned = pd.concat([portfolio.rename("Portfolio"),
+                         benchmark.rename("Benchmark")], axis=1).dropna()
 
     active = aligned["Portfolio"] - aligned["Benchmark"]
     return active.std(ddof=1) * np.sqrt(TRADING_DAYS)
@@ -100,7 +100,8 @@ def tracking_error(portfolio: pd.Series,
 def information_ratio(portfolio: pd.Series,
                       benchmark: pd.Series) -> float:
 
-    aligned = pd.concat([portfolio, benchmark], axis=1).dropna()
+    aligned = pd.concat([portfolio.rename("Portfolio"),
+                         benchmark.rename("Benchmark")], axis=1).dropna()
     if len(aligned) == 0:
         return 0
 
@@ -120,11 +121,10 @@ def information_ratio(portfolio: pd.Series,
 def beta(portfolio: pd.Series,
          benchmark: pd.Series) -> float:
 
-    aligned = pd.concat([portfolio, benchmark], axis=1).dropna()
+    aligned = pd.concat([portfolio.rename("Portfolio"),
+                         benchmark.rename("Benchmark")], axis=1).dropna()
     if len(aligned) == 0:
         return 0
-
-    aligned.columns = ["Portfolio", "Benchmark"]
 
     cov = np.cov(
         aligned["Portfolio"],
@@ -143,7 +143,8 @@ def beta(portfolio: pd.Series,
 def correlation(portfolio: pd.Series,
                 benchmark: pd.Series) -> float:
 
-    aligned = pd.concat([portfolio, benchmark], axis=1).dropna()
+    aligned = pd.concat([portfolio.rename("Portfolio"),
+                         benchmark.rename("Benchmark")], axis=1).dropna()
     if len(aligned) == 0:
         return 0
 
@@ -163,8 +164,8 @@ def rolling_beta(portfolio: pd.Series,
                  benchmark: pd.Series,
                  window: int = 60) -> pd.Series:
 
-    df = pd.concat([portfolio, benchmark], axis=1).dropna()
-    df.columns = ["Portfolio", "Benchmark"]
+    df = pd.concat([portfolio.rename("Portfolio"),
+                    benchmark.rename("Benchmark")], axis=1).dropna()
 
     cov = df["Portfolio"].rolling(window).cov(df["Benchmark"])
     var = df["Benchmark"].rolling(window).var()
@@ -176,10 +177,78 @@ def rolling_correlation(portfolio: pd.Series,
                         benchmark: pd.Series,
                         window: int = 60) -> pd.Series:
 
-    df = pd.concat([portfolio, benchmark], axis=1).dropna()
-    df.columns = ["Portfolio", "Benchmark"]
+    df = pd.concat([portfolio.rename("Portfolio"),
+                    benchmark.rename("Benchmark")], axis=1).dropna()
 
     return df["Portfolio"].rolling(window).corr(df["Benchmark"])
+
+
+
+# ==========================================================
+# PARAMETRIC VaR / CVaR
+# ==========================================================
+
+def parametric_var(returns: pd.Series, alpha: float = 0.05) -> float:
+    from scipy.stats import norm
+    returns = returns.dropna()
+    mu    = returns.mean()
+    sigma = returns.std(ddof=1)
+    return float(mu + norm.ppf(alpha) * sigma)
+
+
+def parametric_cvar(returns: pd.Series, alpha: float = 0.05) -> float:
+    from scipy.stats import norm
+    returns = returns.dropna()
+    mu    = returns.mean()
+    sigma = returns.std(ddof=1)
+    z     = norm.ppf(alpha)
+    return float(mu - sigma * norm.pdf(z) / alpha)
+
+
+def var_cvar_summary(returns: pd.Series) -> Dict:
+    returns = returns.dropna()
+    return {
+        "hist_var_95":   historical_var(returns, 0.05),
+        "hist_cvar_95":  conditional_var(returns, 0.05),
+        "hist_var_99":   historical_var(returns, 0.01),
+        "hist_cvar_99":  conditional_var(returns, 0.01),
+        "param_var_95":  parametric_var(returns, 0.05),
+        "param_cvar_95": parametric_cvar(returns, 0.05),
+        "param_var_99":  parametric_var(returns, 0.01),
+        "param_cvar_99": parametric_cvar(returns, 0.01),
+    }
+
+
+# ==========================================================
+# CONCENTRATION ANALYTICS
+# ==========================================================
+
+def sector_concentration(df: pd.DataFrame) -> pd.DataFrame:
+    grouped = (
+        df.groupby("Sector")
+        .agg(Weight=("Current Weight", "sum"), Holdings=("Ticker", "count"))
+        .reset_index()
+        .sort_values("Weight", ascending=False)
+    )
+    grouped["HHI Contribution"] = grouped["Weight"] ** 2
+    total_hhi = grouped["HHI Contribution"].sum()
+    grouped["% of HHI"] = grouped["HHI Contribution"] / total_hhi if total_hhi > 0 else 0
+    return grouped
+
+
+def asset_type_concentration(df: pd.DataFrame) -> pd.DataFrame:
+    grouped = (
+        df.groupby("Asset Type")
+        .agg(Weight=("Current Weight", "sum"), Holdings=("Ticker", "count"))
+        .reset_index()
+        .sort_values("Weight", ascending=False)
+    )
+    return grouped
+
+
+def effective_n(weights: pd.Series) -> float:
+    hhi = float((weights ** 2).sum())
+    return 1.0 / hhi if hhi > 0 else float(len(weights))
 
 
 # ==========================================================
