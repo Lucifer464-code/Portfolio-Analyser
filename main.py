@@ -467,7 +467,7 @@ st.markdown("""
 <div style="display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:14px;
     background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-card) 100%);
     border:1px solid var(--border);
-    margin-bottom:28px;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
+    margin-top:32px;margin-bottom:28px;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
   <div style="width:46px;height:46px;border-radius:12px;flex-shrink:0;
       background:linear-gradient(135deg,#2563eb 0%,#60a5fa 100%);
       display:flex;align-items:center;justify-content:center;font-size:22px;
