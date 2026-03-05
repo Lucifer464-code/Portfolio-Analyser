@@ -525,17 +525,41 @@ _QUOTE_TYPE_MAP = {
 @st.cache_data(show_spinner=False)
 def fetch_ticker_metadata(tickers):
     def _fetch(ticker):
-        try:
-            info       = yf.Ticker(ticker).info
-            name       = info.get("longName") or info.get("shortName") or ticker
-            sector     = info.get("sector", "Unknown")
-            raw_type   = (info.get("quoteType") or "").upper()
-            asset_type = _QUOTE_TYPE_MAP.get(raw_type, raw_type.title() if raw_type else "Other")
-            return ticker, name, sector, asset_type
-        except Exception:
-            return ticker, ticker, "Unknown", "Other"
+        # Retry up to 3 times with backoff for cloud rate-limiting
+        for _attempt in range(3):
+            try:
+                import time as _time
+                if _attempt > 0:
+                    _time.sleep(_attempt * 1.5)
+                info       = yf.Ticker(ticker).info
+                name       = info.get("longName") or info.get("shortName") or ticker
+                sector     = info.get("sector") or "Unknown"
+                raw_type   = (info.get("quoteType") or "").upper()
+                asset_type = _QUOTE_TYPE_MAP.get(raw_type, raw_type.title() if raw_type else "Other")
+                # If sector still unknown, try a lightweight fast_info fallback
+                if sector == "Unknown":
+                    try:
+                        fi = yf.Ticker(ticker).fast_info
+                        # fast_info doesn't have sector but confirms the ticker is valid
+                    except Exception:
+                        pass
+                return ticker, name, sector, asset_type
+            except Exception:
+                if _attempt == 2:
+                    # Final fallback: infer asset type from ticker suffix
+                    _sfx = ticker.upper()
+                    if _sfx.endswith(".NS") or _sfx.endswith(".BO"):
+                        _atype = "Equity"
+                    elif _sfx.startswith("^"):
+                        _atype = "Index"
+                    else:
+                        _atype = "Other"
+                    return ticker, ticker, "Unknown", _atype
+        return ticker, ticker, "Unknown", "Other"
+
     rows = []
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    # Reduce concurrency to 3 to avoid cloud rate-limiting
+    with ThreadPoolExecutor(max_workers=3) as ex:
         for t, name, sector, asset_type in ex.map(_fetch, tickers):
             rows.append({"Ticker": t, "Name": name, "Sector": sector, "Asset Type": asset_type})
     return pd.DataFrame(rows).set_index("Ticker")
@@ -1131,9 +1155,10 @@ with tab2:
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # Sector breakdown
-    if "Sector" in df.columns:
-        _sec_df  = sector_concentration(df)
+    # Sector breakdown — only show if we have meaningful sector data
+    _has_sector_data = "Sector" in df.columns and (df["Sector"] != "Unknown").any()
+    if _has_sector_data:
+        _sec_df  = sector_concentration(df[df["Sector"] != "Unknown"])
         _type_df = asset_type_concentration(df)
 
         sc1, sc2 = st.columns(2)
