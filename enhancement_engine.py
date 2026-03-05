@@ -32,7 +32,7 @@ LOOKBACK          = "3y"
 TOP_N             = 15
 SP500_FILE        = "sp500_constituents.csv"
 SP500_MAX_AGE_DAYS = 7     # FIX 1: refresh constituent list weekly
-MAX_PE_WORKERS    = 20     # parallel threads for PE fetching
+MAX_PE_WORKERS    = 3      # reduced for cloud rate-limit compliance
 MIN_HISTORY_DAYS  = 252    # require 1 full year of price history
 
 
@@ -113,30 +113,73 @@ def _period_return(prices: pd.Series, periods: int) -> float:
 # Parallel PE Ratio Fetcher (unchanged — already optimal)
 # ----------------------------------------------------------
 
-def _fetch_pe_ratios(tickers: List[str]) -> dict:
-    """
-    Fetch trailingPE and forwardPE for a list of tickers concurrently.
-    Only called on the pre-filtered top-N*3 candidates, not all 500.
-    """
-    def _fetch_one(ticker):
+# ----------------------------------------------------------
+# Static PE / ROE snapshot — instant cloud fallback
+# Approximate trailing values; refreshed periodically by hand
+# ----------------------------------------------------------
+_STATIC_FUNDAMENTALS = {
+    # ticker: (trailingPE, ROE)
+    "AAPL": (31.2, 1.60), "MSFT": (36.5, 0.38), "NVDA": (55.0, 1.15),
+    "AMZN": (42.0, 0.22), "GOOGL": (24.5, 0.31), "GOOG": (24.5, 0.31),
+    "META": (27.0, 0.36), "TSLA": (65.0, 0.13), "BRK.B": (22.0, 0.14),
+    "AVGO": (35.0, 0.62), "LLY": (58.0, 0.95), "JPM": (13.5, 0.17),
+    "V":    (31.0, 0.50), "UNH": (22.0, 0.27), "XOM": (14.0, 0.16),
+    "MA":   (35.0, 2.10), "JNJ": (16.0, 0.22), "PG":  (26.0, 0.32),
+    "HD":   (24.0, 0.60), "COST": (52.0, 0.33), "MRK": (18.0, 0.28),
+    "ABBV": (20.0, 0.55), "CVX": (15.0, 0.14), "WMT": (28.0, 0.19),
+    "BAC":  (13.0, 0.11), "KO":  (24.0, 0.40), "PEP": (25.0, 0.52),
+    "CRM":  (65.0, 0.10), "AMD": (45.0, 0.05), "NFLX":(42.0, 0.31),
+    "INTC": (22.0, 0.05), "QCOM":(18.0, 0.44), "TXN": (22.0, 0.58),
+    "GS":   (14.5, 0.12), "MS":  (17.0, 0.13), "WFC": (12.5, 0.12),
+    "MU":   (18.0, 0.14), "AMAT":(22.0, 0.48), "LRCX":(23.0, 0.82),
+    "NEE":  (22.0, 0.13), "RTX": (38.0, 0.08), "HON": (26.0, 0.31),
+    "UPS":  (18.0, 1.20), "CAT": (17.0, 0.52), "DE":  (14.0, 0.38),
+    "LIN":  (31.0, 0.22), "SHW": (33.0, 0.72), "GE":  (32.0, 0.10),
+    "NKE":  (28.0, 0.35), "SBUX":(24.0, 8.50), "TGT": (15.0, 0.30),
+    "MCD":  (24.0, 0.90), "DIS": (75.0, 0.04), "CMCSA":(11.0,0.17),
+    "VLO":  (10.0, 0.28), "MPC": (10.0, 0.32), "XOM": (14.0, 0.16),
+    "APA":  (9.0,  0.22), "WMB": (22.0, 0.12), "COP": (13.0, 0.21),
+}
+
+
+def _fetch_fundamentals_one(ticker: str) -> dict:
+    """Fetch PE + ROE for a single ticker with retry and static fallback."""
+    import time as _time
+    for attempt in range(3):
         try:
-            info = yf.Ticker(ticker).info
+            if attempt > 0:
+                _time.sleep(attempt * 2)
+            info     = yf.Ticker(ticker).info
             trailing = info.get("trailingPE")
             forward  = info.get("forwardPE")
-            return ticker, {
-                "PE Ratio":  float(trailing) if trailing is not None else np.nan,
-                "Forward PE":float(forward)  if forward  is not None else np.nan,
-            }
+            roe      = info.get("returnOnEquity")
+            # Accept result only if at least one value came back
+            if any(v is not None for v in (trailing, forward, roe)):
+                return {
+                    "PE Ratio":  float(trailing) if trailing is not None else np.nan,
+                    "Forward PE":float(forward)  if forward  is not None else np.nan,
+                    "ROE":       float(roe)      if roe      is not None else np.nan,
+                }
         except Exception:
-            return ticker, {"PE Ratio": np.nan, "Forward PE": np.nan}
+            pass
 
+    # Static fallback
+    if ticker in _STATIC_FUNDAMENTALS:
+        pe, roe = _STATIC_FUNDAMENTALS[ticker]
+        return {"PE Ratio": pe, "Forward PE": np.nan, "ROE": roe}
+
+    return {"PE Ratio": np.nan, "Forward PE": np.nan, "ROE": np.nan}
+
+
+def _fetch_pe_ratios(tickers: List[str]) -> dict:
+    """Fetch trailingPE and forwardPE for a list of tickers."""
     pe_map = {}
     with ThreadPoolExecutor(max_workers=MAX_PE_WORKERS) as executor:
-        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        futures = {executor.submit(_fetch_fundamentals_one, t): t for t in tickers}
         for future in as_completed(futures):
-            ticker, data = future.result()
-            pe_map[ticker] = data
-
+            t    = futures[future]
+            data = future.result()
+            pe_map[t] = {"PE Ratio": data["PE Ratio"], "Forward PE": data["Forward PE"]}
     return pe_map
 
 
@@ -145,30 +188,13 @@ def _fetch_pe_ratios(tickers: List[str]) -> dict:
 # ----------------------------------------------------------
 
 def _fetch_pe_and_roe(tickers: List[str]) -> dict:
-    """
-    Fetch trailingPE, forwardPE and ROE for a list of tickers concurrently.
-    """
-    def _fetch_one(ticker):
-        try:
-            info = yf.Ticker(ticker).info
-            trailing = info.get("trailingPE")
-            forward  = info.get("forwardPE")
-            roe      = info.get("returnOnEquity")
-            return ticker, {
-                "PE Ratio":  float(trailing) if trailing is not None else np.nan,
-                "Forward PE":float(forward)  if forward  is not None else np.nan,
-                "ROE":       float(roe) if roe is not None else np.nan,
-            }
-        except Exception:
-            return ticker, {"PE Ratio": np.nan, "Forward PE": np.nan, "ROE": np.nan}
-
+    """Fetch trailingPE, forwardPE and ROE for a list of tickers."""
     pe_roe_map = {}
     with ThreadPoolExecutor(max_workers=MAX_PE_WORKERS) as executor:
-        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        futures = {executor.submit(_fetch_fundamentals_one, t): t for t in tickers}
         for future in as_completed(futures):
-            ticker, data = future.result()
-            pe_roe_map[ticker] = data
-
+            t    = futures[future]
+            pe_roe_map[t] = future.result()
     return pe_roe_map
 
 
@@ -339,10 +365,11 @@ def generate_enhancement_recommendations(
 
 def compute_portfolio_3m_relative_performance(
     tickers: List[str],
-    price_data: Optional[pd.DataFrame] = None,   # FIX 4: accept pre-fetched data
+    price_data: Optional[pd.DataFrame] = None,
+    benchmark: str = BENCHMARK,
 ) -> pd.DataFrame:
     """
-    Compute each holding's 3-month return vs the SPY benchmark.
+    Compute each holding's 3-month return vs the selected benchmark.
 
     Parameters
     ----------
@@ -350,11 +377,13 @@ def compute_portfolio_3m_relative_performance(
         Portfolio ticker symbols.
     price_data : pd.DataFrame, optional
         Pre-fetched price DataFrame. If None, data is downloaded here.
+    benchmark : str
+        Benchmark ticker to compare against. Defaults to module-level BENCHMARK.
     """
 
     # ── Price data ────────────────────────────────────────
     if price_data is None:
-        price_data = _download_prices(tickers + [BENCHMARK], LOOKBACK)
+        price_data = _download_prices(tickers + [benchmark], LOOKBACK)
 
     if price_data is None or price_data.empty:
         raise Exception("Price data unavailable.")
@@ -362,10 +391,10 @@ def compute_portfolio_3m_relative_performance(
     if isinstance(price_data.columns, pd.MultiIndex):
         price_data = price_data["Close"]
 
-    if BENCHMARK not in price_data.columns:
-        raise Exception("Benchmark (SPY) missing from price data.")
+    if benchmark not in price_data.columns:
+        raise Exception(f"Benchmark ({benchmark}) missing from price data.")
 
-    bm_prices = price_data[BENCHMARK].dropna()
+    bm_prices = price_data[benchmark].dropna()
 
     if len(bm_prices) < 63:
         raise Exception("Insufficient benchmark history for 3M calculation.")
