@@ -1242,7 +1242,8 @@ with tab3:
     def _on_method_change():
         st.session_state.pop("_opt_key", None)
         st.session_state.pop("optimal_weights", None)
-        st.session_state["opt_method"] = st.session_state["opt_method_radio"]
+        st.session_state["opt_method"] = st.session_state.get("opt_method_radio",
+                                         st.session_state.get("opt_method", "Max Sharpe"))
 
     st.radio(
         "Method",
