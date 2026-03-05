@@ -1262,14 +1262,31 @@ with tab2:
                 path=["Sector", "Ticker"],
                 values="Weight",
                 color="Weight",
-                color_continuous_scale="Blues",
+                color_continuous_scale=[
+                    [0.0,  "#1e3a5f"],
+                    [0.35, "#1d4ed8"],
+                    [0.65, "#3b82f6"],
+                    [1.0,  "#93c5fd"],
+                ],
             )
             _sec_fig.update_traces(
-                texttemplate="<b>%{label}</b><br>%{value:.1%}",
-                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
+                texttemplate="<b>%{label}</b><br><span style='font-size:11px'>%{value:.1%}</span>",
+                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<br>Parent: %{parent}<extra></extra>",
+                textfont=dict(size=13, family="Inter, Segoe UI, sans-serif"),
+                insidetextfont=dict(color="white"),
+                marker=dict(
+                    line=dict(width=2, color="#0f172a"),
+                    pad=dict(t=24, l=4, r=4, b=4),
+                ),
+                root_color="#0f172a",
             )
-            _sec_fig.update_layout(height=380, margin=dict(l=0,r=0,t=0,b=0),
-                                   coloraxis_showscale=False)
+            _sec_fig.update_layout(
+                height=400,
+                margin=dict(l=0, r=0, t=0, b=0),
+                coloraxis_showscale=False,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
             st.plotly_chart(_sec_fig, use_container_width=True)
 
             # Table underneath
