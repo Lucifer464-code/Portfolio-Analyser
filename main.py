@@ -522,46 +522,135 @@ _QUOTE_TYPE_MAP = {
     "BOND":           "Bond",
 }
 
+# Static GICS sector map for common US tickers — used as cloud fallback
+_US_SECTOR_MAP = {
+    # Technology
+    "AAPL":"Technology","MSFT":"Technology","NVDA":"Technology","AVGO":"Technology",
+    "ORCL":"Technology","CRM":"Technology","AMD":"Technology","INTC":"Technology",
+    "QCOM":"Technology","TXN":"Technology","MU":"Technology","AMAT":"Technology",
+    "KLAC":"Technology","LRCX":"Technology","ADI":"Technology","MCHP":"Technology",
+    "FTNT":"Technology","PANW":"Technology","SNPS":"Technology","CDNS":"Technology",
+    "IBM":"Technology","HPQ":"Technology","DELL":"Technology","STX":"Technology",
+    # Communication Services
+    "GOOG":"Communication Services","GOOGL":"Communication Services",
+    "META":"Communication Services","NFLX":"Communication Services",
+    "DIS":"Communication Services","CMCSA":"Communication Services",
+    "T":"Communication Services","VZ":"Communication Services",
+    "TMUS":"Communication Services","CHTR":"Communication Services",
+    "ATVI":"Communication Services","EA":"Communication Services",
+    # Consumer Discretionary
+    "AMZN":"Consumer Discretionary","TSLA":"Consumer Discretionary",
+    "HD":"Consumer Discretionary","MCD":"Consumer Discretionary",
+    "NKE":"Consumer Discretionary","SBUX":"Consumer Discretionary",
+    "TJX":"Consumer Discretionary","BKNG":"Consumer Discretionary",
+    "LOW":"Consumer Discretionary","TGT":"Consumer Discretionary",
+    "ABNB":"Consumer Discretionary","EBAY":"Consumer Discretionary",
+    # Consumer Staples
+    "WMT":"Consumer Staples","PG":"Consumer Staples","KO":"Consumer Staples",
+    "PEP":"Consumer Staples","COST":"Consumer Staples","PM":"Consumer Staples",
+    "MO":"Consumer Staples","CL":"Consumer Staples","MDLZ":"Consumer Staples",
+    "GIS":"Consumer Staples","KHC":"Consumer Staples","STZ":"Consumer Staples",
+    # Financials
+    "BRK.B":"Financials","JPM":"Financials","V":"Financials","MA":"Financials",
+    "BAC":"Financials","WFC":"Financials","GS":"Financials","MS":"Financials",
+    "AXP":"Financials","BLK":"Financials","SCHW":"Financials","C":"Financials",
+    "USB":"Financials","PNC":"Financials","TFC":"Financials","COF":"Financials",
+    "CB":"Financials","MMC":"Financials","AON":"Financials","ICE":"Financials",
+    # Healthcare
+    "LLY":"Healthcare","UNH":"Healthcare","JNJ":"Healthcare","MRK":"Healthcare",
+    "ABBV":"Healthcare","PFE":"Healthcare","TMO":"Healthcare","ABT":"Healthcare",
+    "DHR":"Healthcare","BMY":"Healthcare","AMGN":"Healthcare","GILD":"Healthcare",
+    "CVS":"Healthcare","MDT":"Healthcare","SYK":"Healthcare","ISRG":"Healthcare",
+    "VRTX":"Healthcare","REGN":"Healthcare","BIIB":"Healthcare","MRNA":"Healthcare",
+    # Industrials
+    "GE":"Industrials","CAT":"Industrials","HON":"Industrials","UPS":"Industrials",
+    "BA":"Industrials","RTX":"Industrials","LMT":"Industrials","DE":"Industrials",
+    "MMM":"Industrials","GD":"Industrials","NOC":"Industrials","FDX":"Industrials",
+    "EMR":"Industrials","ETN":"Industrials","PH":"Industrials","ROK":"Industrials",
+    # Energy
+    "XOM":"Energy","CVX":"Energy","COP":"Energy","EOG":"Energy","SLB":"Energy",
+    "MPC":"Energy","PSX":"Energy","VLO":"Energy","OXY":"Energy","DVN":"Energy",
+    "HAL":"Energy","BKR":"Energy","FANG":"Energy","APA":"Energy",
+    # Utilities
+    "NEE":"Utilities","DUK":"Utilities","SO":"Utilities","D":"Utilities",
+    "AEP":"Utilities","EXC":"Utilities","SRE":"Utilities","XEL":"Utilities",
+    "PCG":"Utilities","ED":"Utilities","ETR":"Utilities","FE":"Utilities",
+    # Real Estate
+    "PLD":"Real Estate","AMT":"Real Estate","EQIX":"Real Estate","CCI":"Real Estate",
+    "PSA":"Real Estate","SPG":"Real Estate","WELL":"Real Estate","DLR":"Real Estate",
+    "O":"Real Estate","AVB":"Real Estate","EQR":"Real Estate","VTR":"Real Estate",
+    # Materials
+    "LIN":"Materials","APD":"Materials","SHW":"Materials","FCX":"Materials",
+    "NEM":"Materials","ECL":"Materials","DOW":"Materials","DD":"Materials",
+    "NUE":"Materials","CTVA":"Materials","ALB":"Materials","MOS":"Materials",
+    # Common ETFs
+    "SPY":"ETF","QQQ":"ETF","IWM":"ETF","VTI":"ETF","VOO":"ETF",
+    "XLK":"ETF","XLF":"ETF","XLV":"ETF","XLE":"ETF","XLI":"ETF",
+    "XLY":"ETF","XLP":"ETF","XLU":"ETF","XLB":"ETF","XLRE":"ETF",
+    "GLD":"ETF","SLV":"ETF","TLT":"ETF","HYG":"ETF","LQD":"ETF",
+    "ARKK":"ETF","ARKG":"ETF","ARKW":"ETF","ARKF":"ETF","ARKQ":"ETF",
+}
+
 @st.cache_data(show_spinner=False)
 def fetch_ticker_metadata(tickers):
-    def _fetch(ticker):
-        # Retry up to 3 times with backoff for cloud rate-limiting
-        for _attempt in range(3):
-            try:
-                import time as _time
-                if _attempt > 0:
-                    _time.sleep(_attempt * 1.5)
-                info       = yf.Ticker(ticker).info
-                name       = info.get("longName") or info.get("shortName") or ticker
-                sector     = info.get("sector") or "Unknown"
-                raw_type   = (info.get("quoteType") or "").upper()
-                asset_type = _QUOTE_TYPE_MAP.get(raw_type, raw_type.title() if raw_type else "Other")
-                # If sector still unknown, try a lightweight fast_info fallback
-                if sector == "Unknown":
-                    try:
-                        fi = yf.Ticker(ticker).fast_info
-                        # fast_info doesn't have sector but confirms the ticker is valid
-                    except Exception:
-                        pass
-                return ticker, name, sector, asset_type
-            except Exception:
-                if _attempt == 2:
-                    # Final fallback: infer asset type from ticker suffix
-                    _sfx = ticker.upper()
-                    if _sfx.endswith(".NS") or _sfx.endswith(".BO"):
-                        _atype = "Equity"
-                    elif _sfx.startswith("^"):
-                        _atype = "Index"
-                    else:
-                        _atype = "Other"
-                    return ticker, ticker, "Unknown", _atype
-        return ticker, ticker, "Unknown", "Other"
+    import time as _time
 
+    def _fetch_single(ticker):
+        """Try multiple methods to get sector, falling back gracefully."""
+        t = ticker.upper().strip()
+
+        # Method 1: yf.Ticker().info (most complete but rate-limited on cloud)
+        for _attempt in range(2):
+            try:
+                if _attempt > 0:
+                    _time.sleep(2)
+                info     = yf.Ticker(t).info
+                name     = info.get("longName") or info.get("shortName") or t
+                sector   = info.get("sector") or ""
+                raw_type = (info.get("quoteType") or "").upper()
+                atype    = _QUOTE_TYPE_MAP.get(raw_type, raw_type.title() if raw_type else "Equity")
+                if sector:
+                    return t, name, sector, atype
+                # Got info but no sector — use static map or ETF check
+                if raw_type == "ETF":
+                    return t, name, "ETF", "ETF"
+                break
+            except Exception:
+                pass
+
+        # Method 2: static sector map (instant, no network)
+        if t in _US_SECTOR_MAP:
+            _sec = _US_SECTOR_MAP[t]
+            _atype = "ETF" if _sec == "ETF" else "Equity"
+            return t, t, _sec, _atype
+
+        # Method 3: yf.Ticker().fast_info for name + type only
+        try:
+            fi    = yf.Ticker(t).fast_info
+            name  = getattr(fi, "display_name", None) or t
+            # Infer type from ticker pattern
+            if t.startswith("^"):
+                return t, name, "Index", "Index"
+            if t.endswith(".NS") or t.endswith(".BO"):
+                return t, name, "Unknown", "Equity"
+            return t, name, "Unknown", "Equity"
+        except Exception:
+            pass
+
+        # Final fallback
+        if t.startswith("^"):
+            return t, t, "Index", "Index"
+        if t.endswith(".NS") or t.endswith(".BO"):
+            return t, t, "Unknown", "Equity"
+        return t, t, "Unknown", "Equity"
+
+    # Sequential fetch with small delay between tickers to avoid rate limiting
     rows = []
-    # Reduce concurrency to 3 to avoid cloud rate-limiting
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        for t, name, sector, asset_type in ex.map(_fetch, tickers):
-            rows.append({"Ticker": t, "Name": name, "Sector": sector, "Asset Type": asset_type})
+    for ticker in tickers:
+        t, name, sector, atype = _fetch_single(ticker)
+        rows.append({"Ticker": t, "Name": name, "Sector": sector, "Asset Type": atype})
+        _time.sleep(0.3)   # small delay between tickers
+
     return pd.DataFrame(rows).set_index("Ticker")
 
 
