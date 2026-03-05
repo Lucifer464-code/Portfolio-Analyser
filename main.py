@@ -247,11 +247,9 @@ def section_header(title):
 def style_pl(df, pl_cols):
     def _colour(val):
         try:
-            num = float(str(val).replace("%","").replace("$","").replace("₹","").replace(",",""))
-            if num > 0: return "color:#22c55e;font-weight:600"
-            if num < 0: return "color:#ef4444;font-weight:600"
-        except (ValueError, TypeError): pass
-        return ""
+            n = float(str(val).replace("%","").replace("$","").replace("₹","").replace(",",""))
+            return ("color:#22c55e" if n>0 else "color:#ef4444") + ";font-weight:600"
+        except (ValueError, TypeError): return ""
     return df.style.applymap(_colour, subset=pl_cols)
 
 
@@ -279,41 +277,31 @@ def quick_chart(fig, height=320):
     fig.update_layout(height=height, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
+def stat_banner(items, accent="#3b82f6"):
+    """Render a horizontal banner of (label, value) pairs.
+    items: list of (label, value) or (label, value, colour) tuples.
+    """
+    cells = ""
+    for i, item in enumerate(items):
+        label, value = item[0], item[1]
+        colour = item[2] if len(item) > 2 else "var(--text-primary)"
+        align = "left" if i == 0 else ("right" if i == len(items)-1 else "center")
+        cells += (f"<div style='text-align:{align}'>"
+                  f"<div style='font-size:10px;font-weight:600;letter-spacing:.1em;"
+                  f"text-transform:uppercase;color:{accent};margin-bottom:5px'>{label}</div>"
+                  f"<div style='font-size:22px;font-weight:700;color:{colour}'>{value}</div>"
+                  f"</div>")
+    st.markdown(
+        f"<div style='display:flex;justify-content:space-between;align-items:center;"
+        f"padding:18px 24px;border-radius:var(--radius);background:linear-gradient("
+        f"135deg,{accent}18 0%,{accent}08 100%);border:1px solid {accent}40;"
+        f"border-left:4px solid {accent};margin-bottom:24px;gap:16px'>{cells}</div>",
+        unsafe_allow_html=True)
+
 
 # ==========================================================
 # PDF HELPERS
 # ==========================================================
-
-def _pdf_table_style(header_color, alt_color="#f0f4f8"):
-    return TableStyle([
-        ('BACKGROUND',    (0,0), (-1,0),  colors.HexColor(header_color)),
-        ('TEXTCOLOR',     (0,0), (-1,0),  colors.whitesmoke),
-        ('FONTNAME',      (0,0), (-1,0),  'Helvetica-Bold'),
-        ('FONTNAME',      (0,1), (-1,-1), 'Helvetica'),
-        ('FONTSIZE',      (0,0), (-1,0),  10),
-        ('FONTSIZE',      (0,1), (-1,-1), 8),
-        ('TOPPADDING',    (0,0), (-1,0),  8),
-        ('BOTTOMPADDING', (0,0), (-1,0),  8),
-        ('TOPPADDING',    (0,1), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,1), (-1,-1), 4),
-        ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-        ('GRID',          (0,0), (-1,-1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, colors.HexColor(alt_color)]),
-    ])
-
-
-def _pdf_section(story, heading_style, title, table_data, col_widths, header_color,
-                 alt_color="#f0f4f8", page_break=False):
-    if page_break:
-        story.append(PageBreak())
-    if title:
-        story.append(Paragraph(title, heading_style))
-    if len(table_data) > 1:
-        t = Table(table_data, colWidths=col_widths)
-        t.setStyle(_pdf_table_style(header_color, alt_color))
-        story.append(t)
-    story.append(Spacer(1, 0.15*inch))
-
 
 def _fig_to_image(fig, width_px, height_px, w_inch, h_inch):
     buf = BytesIO(fig.to_image(format="png", width=width_px, height=height_px))
@@ -324,135 +312,249 @@ def _fig_to_image(fig, width_px, height_px, w_inch, h_inch):
 def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
                            curr_ret, curr_vol, opt_ret, opt_vol, health_score,
                            opt_method="Max Sharpe", portfolio_returns=None,
-                           benchmark_returns=None, enhancements=None, currency="$"):
+                           benchmark_returns=None, enhancements=None, currency="$",
+                           benchmark_name="Benchmark", pl_summary=None, portfolio_xirr=None):
     buffer = BytesIO()
     pdf    = SimpleDocTemplate(buffer, pagesize=letter,
                                rightMargin=0.5*inch, leftMargin=0.5*inch,
-                               topMargin=0.5*inch,   bottomMargin=0.5*inch)
+                               topMargin=0.6*inch,   bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle('CT', parent=styles['Heading1'], fontSize=24,
-        textColor=colors.HexColor('#2563eb'), spaceAfter=6, alignment=1, fontName='Helvetica-Bold')
-    date_style  = ParagraphStyle('DS', parent=styles['Normal'], fontSize=10,
-        textColor=colors.HexColor('#64748b'), alignment=1)
-    h_style     = ParagraphStyle('CH', parent=styles['Heading2'], fontSize=13,
-        textColor=colors.HexColor('#1e40af'), spaceAfter=10, spaceBefore=12, fontName='Helvetica-Bold')
+    BLUE    = colors.HexColor('#1e40af')
+    LBLUE   = colors.HexColor('#dbeafe')
+    RED     = colors.HexColor('#dc2626')
+    LRED    = colors.HexColor('#fee2e2')
+    GREEN   = colors.HexColor('#16a34a')
+    LGREEN  = colors.HexColor('#dcfce7')
+    PURPLE  = colors.HexColor('#7c3aed')
+    LPURPLE = colors.HexColor('#f5f3ff')
+    ALTROW  = colors.HexColor('#f1f5f9')
 
+    title_style = ParagraphStyle('CT', parent=styles['Heading1'], fontSize=22,
+        textColor=BLUE, spaceAfter=4, alignment=1, fontName='Helvetica-Bold')
+    sub_style   = ParagraphStyle('DS', parent=styles['Normal'], fontSize=9,
+        textColor=colors.HexColor('#64748b'), alignment=1, spaceAfter=2)
+    h_style     = ParagraphStyle('CH', parent=styles['Heading2'], fontSize=12,
+        textColor=BLUE, spaceAfter=8, spaceBefore=14, fontName='Helvetica-Bold',
+        borderPad=4, backColor=LBLUE, leading=18)
+    note_style  = ParagraphStyle('NT', parent=styles['Normal'], fontSize=8,
+        textColor=colors.HexColor('#64748b'), spaceAfter=6, leftIndent=4)
+
+    def _tbl(data, col_widths, hdr_bg, alt_bg=ALTROW, num_cols_right=None):
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        style_cmds = [
+            ('BACKGROUND',    (0,0), (-1,0),  hdr_bg),
+            ('TEXTCOLOR',     (0,0), (-1,0),  colors.white),
+            ('FONTNAME',      (0,0), (-1,0),  'Helvetica-Bold'),
+            ('FONTNAME',      (0,1), (-1,-1), 'Helvetica'),
+            ('FONTSIZE',      (0,0), (-1,0),  9),
+            ('FONTSIZE',      (0,1), (-1,-1), 8),
+            ('TOPPADDING',    (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING',   (0,0), (-1,-1), 6),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+            ('GRID',          (0,0), (-1,-1), 0.4, colors.HexColor('#cbd5e1')),
+            ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, alt_bg]),
+            ('ALIGN',         (0,0), (0,-1),  'LEFT'),
+            ('ALIGN',         (1,0), (-1,-1), 'RIGHT'),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ]
+        # Colour positive/negative in Change columns
+        if num_cols_right:
+            for row_idx in range(1, len(data)):
+                for col_idx in range(len(data[0]) - num_cols_right, len(data[0])):
+                    val = str(data[row_idx][col_idx])
+                    if val.startswith('+'):
+                        style_cmds.append(('TEXTCOLOR', (col_idx, row_idx), (col_idx, row_idx), GREEN))
+                    elif val.startswith('-'):
+                        style_cmds.append(('TEXTCOLOR', (col_idx, row_idx), (col_idx, row_idx), RED))
+        t.setStyle(TableStyle(style_cmds))
+        return t
+
+    def _h(title):
+        story.append(Spacer(1, 0.08*inch))
+        story.append(Paragraph(title, h_style))
+
+    # ── Cover ─────────────────────────────────────────────────
     story = [
+        Spacer(1, 0.1*inch),
         Paragraph("PORTFOLIO ANALYSIS REPORT", title_style),
-        Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}", date_style),
-        Spacer(1, 0.25*inch),
+        Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}", sub_style),
+        Paragraph(f"Benchmark: {benchmark_name}  ·  Method: {opt_method}", sub_style),
+        Spacer(1, 0.2*inch),
     ]
 
-    # Summary
-    _pdf_section(story, h_style, "Portfolio Summary", [
-        ["Metric", "Value"],
-        ["Total Portfolio Value",  f"{currency}{df['Market Value'].sum():,.2f}"],
-        ["Number of Holdings",     str(len(df))],
-        ["Health Score",           f"{health_score:.1%}"],
-        ["Optimisation Method",    opt_method],
-        ["Current Return (Ann.)",  f"{curr_ret:.2%}"],
-        ["Current Volatility",     f"{curr_vol:.2%}"],
-    ], [3*inch, 2*inch], '#1e40af', '#f0f4f8')
-    _pdf_section(story, h_style, "Risk Metrics", [
-        ["Metric", "Value"],
-        ["Sharpe Ratio",  f"{risk_summary.get('Sharpe Ratio',0):.3f}"],
-        ["Max Drawdown",  f"{risk_summary.get('Max Drawdown',0):.2%}"],
-        ["Sortino Ratio", f"{risk_summary.get('Sortino Ratio',0):.3f}"],
-        ["Beta",          f"{risk_summary.get('Beta',0):.3f}"],
-    ], [3*inch, 2*inch], '#dc2626', '#fee2e2')
+    # ── Portfolio Summary ─────────────────────────────────────
+    total_value    = df['Market Value'].sum()
+    _hs_display   = f"{min(health_score, 100.0):.1f} / 100"
+    _xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr and not np.isnan(float(portfolio_xirr or float('nan'))) else "N/A"
+    _unreal       = (pl_summary or {}).get("unrealised_pl",  0)
+    _real         = (pl_summary or {}).get("realised_pl",    0)
+    _unreal_pct   = (pl_summary or {}).get("unrealised_pct", 0)
 
-    # Allocation pie chart
-    story.append(Paragraph("Asset Allocation", h_style))
-    try:
-        alloc = df[["Ticker","Market Value"]].sort_values("Market Value", ascending=False).head(10)
-        fig   = px.pie(alloc, names="Ticker", values="Market Value",
-                       color_discrete_sequence=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6",
-                                                "#06b6d4","#f97316","#84cc16","#ec4899","#14b8a6"])
-        fig.update_layout(height=350, margin=dict(l=20,r=20,t=20,b=20), font=dict(size=10))
-        story.append(_fig_to_image(fig, 500, 350, 5, 3.5))
-    except Exception:
-        story.append(Paragraph("<i>Chart unavailable</i>", styles['Normal']))
-    story.append(Spacer(1, 0.15*inch))
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Portfolio Value",   f"{currency}{total_value:,.2f}"],
+        ["Amount Invested",         f"{currency}{pl_summary.get('total_cost',0):,.2f}" if pl_summary else "N/A"],
+        ["Unrealised P/L",          f"{currency}{_unreal:,.2f}  ({_unreal_pct:+.2%})"],
+        ["Realised P/L",            f"{currency}{_real:,.2f}"],
+        ["XIRR",                    _xirr_display],
+        ["Number of Holdings",      str(len(df))],
+        ["Portfolio Health Score",  _hs_display],
+        ["Annual Return",           f"{curr_ret:.2%}"],
+        ["Annual Volatility",       f"{curr_vol:.2%}"],
+    ]
+    _h("Portfolio Summary")
+    story.append(_tbl(summary_data, [3.2*inch, 2.3*inch], BLUE))
+    story.append(Spacer(1, 0.1*inch))
 
-    # Holdings table
+    # ── Risk Metrics ──────────────────────────────────────────
+    _h("Risk Metrics")
+    risk_data = [
+        ["Metric", "Value"],
+        ["Sharpe Ratio",     f"{risk_summary.get('Sharpe Ratio',  0):.3f}"],
+        ["Sortino Ratio",    f"{risk_summary.get('Sortino Ratio', 0):.3f}"],
+        ["Max Drawdown",     f"{risk_summary.get('Max Drawdown',  0):.2%}"],
+        ["Beta",             f"{risk_summary.get('Beta',          0):.3f}"],
+        ["VaR 95%",          f"{risk_summary.get('VaR 95%',       0):.2%}"],
+        ["CVaR 95%",         f"{risk_summary.get('CVaR 95%',      0):.2%}"],
+        ["Tracking Error",   f"{risk_summary.get('Tracking Error',0):.2%}"],
+        ["Information Ratio",f"{risk_summary.get('Information Ratio',0):.3f}"],
+    ]
+    story.append(_tbl(risk_data, [3.2*inch, 2.3*inch], RED, LRED))
+    story.append(Spacer(1, 0.1*inch))
+
+    # ── Holdings Table ────────────────────────────────────────
     story.append(PageBreak())
+    _h("Current Holdings")
     try:
-        hd = df[["Ticker","Quantity","Avg Cost","Current Price","Market Value","Current Weight"]].copy()
-        hd["Market Value"]   = hd["Market Value"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
-        hd["Current Weight"] = hd["Current Weight"].apply(lambda x: f"{float(x):.2%}" if pd.notna(x) else "N/A")
-        hd["Current Price"]  = hd["Current Price"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
-        hd["Avg Cost"]       = hd["Avg Cost"].apply(lambda x: f"{currency}{float(x):,.2f}" if pd.notna(x) else "N/A")
-        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight"]]
+        hd   = df[["Ticker","Quantity","Avg Cost","Current Price","Market Value",
+                   "Current Weight","Unrealised P/L","P/L %"]].copy()
+        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight","Unreal P/L","P/L %"]]
         for _, r in hd.iterrows():
             try:
-                rows.append([str(r["Ticker"]), f"{float(r['Quantity']):,.0f}",
-                             str(r["Avg Cost"]), str(r["Current Price"]),
-                             str(r["Market Value"]), str(r["Current Weight"])])
+                pl_val = float(r.get("Unrealised P/L", 0))
+                pl_pct = float(r.get("P/L %", 0))
+                rows.append([
+                    str(r["Ticker"]),
+                    f"{float(r['Quantity']):,.0f}",
+                    f"{currency}{float(r['Avg Cost']):,.2f}",
+                    f"{currency}{float(r['Current Price']):,.2f}",
+                    f"{currency}{float(r['Market Value']):,.2f}",
+                    f"{float(r['Current Weight']):.2%}",
+                    f"{'+' if pl_val>=0 else ''}{currency}{pl_val:,.2f}",
+                    f"{pl_pct:+.2%}",
+                ])
             except (ValueError, TypeError):
                 continue
     except Exception:
-        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight"]]
-    _pdf_section(story, h_style, "Current Holdings", rows,
-                 [1.0*inch,0.7*inch,1.0*inch,0.9*inch,1.0*inch,0.75*inch], '#1e40af')
+        rows = [["Ticker","Qty","Avg Cost","Price","Value","Weight","Unreal P/L","P/L %"]]
+    story.append(_tbl(rows,
+        [0.75*inch,0.55*inch,0.85*inch,0.85*inch,0.95*inch,0.65*inch,0.95*inch,0.65*inch],
+        BLUE, num_cols_right=2))
+    story.append(Spacer(1, 0.1*inch))
 
-    # Performance comparison chart
+    # ── Performance Comparison (text-based, no kaleido needed) ──
+    story.append(PageBreak())
+    _h("Performance Comparison")
     if portfolio_returns is not None and benchmark_returns is not None:
-        story.append(PageBreak())
-        story.append(Paragraph("Performance Comparison", h_style))
         try:
             aligned = pd.concat([portfolio_returns.rename("Portfolio"),
                                   benchmark_returns.rename("Benchmark")], axis=1).dropna()
             if not aligned.empty:
-                cp   = (1+aligned["Portfolio"]).cumprod()-1
-                cb   = (1+aligned["Benchmark"]).cumprod()-1
-                fig2 = go.Figure([
-                    go.Scatter(x=cp.index, y=cp.values, name='Portfolio',
-                               line=dict(color='#3b82f6', width=2.5)),
-                    go.Scatter(x=cb.index, y=cb.values, name='Benchmark',
-                               line=dict(color='#64748b', width=2.5, dash='dash')),
-                ])
-                fig2.update_layout(height=350, margin=dict(l=40,r=40,t=40,b=40),
-                                   plot_bgcolor='#f9fafb', paper_bgcolor='white',
-                                   font=dict(size=10), legend=dict(x=0.02,y=0.98))
-                story.append(_fig_to_image(fig2, 650, 350, 6, 3))
+                # Try chart first, fall back to period returns table
+                chart_ok = False
+                try:
+                    cp   = (1+aligned["Portfolio"]).cumprod()-1
+                    cb   = (1+aligned["Benchmark"]).cumprod()-1
+                    fig2 = go.Figure([
+                        go.Scatter(x=cp.index, y=cp.values*100, name='Portfolio',
+                                   line=dict(color='#2563eb', width=2.5)),
+                        go.Scatter(x=cb.index, y=cb.values*100, name=benchmark_name,
+                                   line=dict(color='#94a3b8', width=2, dash='dash')),
+                    ])
+                    fig2.update_layout(
+                        height=300, margin=dict(l=40,r=20,t=20,b=40),
+                        plot_bgcolor='#f8fafc', paper_bgcolor='white',
+                        font=dict(size=9, family='Helvetica'),
+                        yaxis=dict(ticksuffix="%", gridcolor='#e2e8f0'),
+                        xaxis=dict(gridcolor='#e2e8f0'),
+                        legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
+                    )
+                    story.append(_fig_to_image(fig2, 650, 300, 6.5, 3))
+                    chart_ok = True
+                except Exception:
+                    pass
+
+                # Period returns table always shown
+                periods = {"1M":21,"3M":63,"6M":126,"1Y":252,"3Y":756}
+                perf_rows = [["Period","Portfolio","Benchmark","Excess Return"]]
+                for label, days in periods.items():
+                    if len(aligned) >= days:
+                        p_ret = float((1+aligned["Portfolio"].iloc[-days:]).prod()-1)
+                        b_ret = float((1+aligned["Benchmark"].iloc[-days:]).prod()-1)
+                        exc   = p_ret - b_ret
+                        perf_rows.append([
+                            label,
+                            f"{p_ret:+.2%}",
+                            f"{b_ret:+.2%}",
+                            f"{exc:+.2%}",
+                        ])
+                if len(perf_rows) > 1:
+                    story.append(Spacer(1, 0.1*inch))
+                    story.append(_tbl(perf_rows,
+                        [1.2*inch,1.5*inch,1.5*inch,1.5*inch], BLUE, num_cols_right=1))
         except Exception:
-            story.append(Paragraph("<i>Chart unavailable</i>", styles['Normal']))
-        story.append(Spacer(1, 0.15*inch))
+            story.append(Paragraph("<i>Performance data unavailable</i>", note_style))
+    story.append(Spacer(1, 0.1*inch))
 
-    # Optimization results
+    # ── Optimisation Results ──────────────────────────────────
     if optimal_weights is not None:
-        _pdf_section(story, h_style, f"Optimisation Results — {opt_method}", [
-            ["Metric",    "Current",        "Optimized",      "Change"],
-            ["Return",    f"{curr_ret:.2%}", f"{opt_ret:.2%}", f"{opt_ret-curr_ret:+.2%}"],
-            ["Volatility",f"{curr_vol:.2%}", f"{opt_vol:.2%}", f"{opt_vol-curr_vol:+.2%}"],
-        ], [1.8*inch,1.3*inch,1.3*inch,1.3*inch], '#22c55e', '#f0fdf4')
+        _h(f"Optimisation Results — {opt_method}")
+        opt_summary = [
+            ["Metric",      "Current",         "Optimised",       "Change"],
+            ["Return",      f"{curr_ret:.2%}",  f"{opt_ret:.2%}",  f"{opt_ret-curr_ret:+.2%}"],
+            ["Volatility",  f"{curr_vol:.2%}",  f"{opt_vol:.2%}",  f"{opt_vol-curr_vol:+.2%}"],
+        ]
+        story.append(_tbl(opt_summary,
+            [1.8*inch,1.4*inch,1.4*inch,1.4*inch], GREEN, LGREEN, num_cols_right=1))
+        story.append(Spacer(1, 0.1*inch))
 
-        # Weight changes table
         try:
-            wt_rows = [["Ticker","Current Weight","Optimized Weight","Change"]]
-            for ticker in optimal_weights.index:
+            wt_rows = [["Ticker","Current","Optimised","Change"]]
+            for ticker in sorted(optimal_weights.index):
                 curr_w = float(weights_series.get(ticker, 0))
                 opt_w  = float(optimal_weights[ticker])
                 wt_rows.append([ticker, f"{curr_w:.2%}", f"{opt_w:.2%}", f"{opt_w-curr_w:+.2%}"])
-            _pdf_section(story, h_style, "Weight Changes", wt_rows,
-                         [1.5*inch,1.5*inch,1.5*inch,1.5*inch], '#1e40af')
+            story.append(_tbl(wt_rows,
+                [1.8*inch,1.4*inch,1.4*inch,1.4*inch], BLUE, num_cols_right=1))
         except Exception:
             pass
 
-    # Enhancements
+    # ── Enhancement Recommendations ───────────────────────────
     if enhancements is not None and not enhancements.empty:
-        rows = [["Ticker","Price","1Y Return","Alpha","Score"]]
+        story.append(PageBreak())
+        _h("Enhancement Recommendations")
+        # Detect alpha column name dynamically
+        alpha_col = next((c for c in enhancements.columns if "alpha" in c.lower()), None)
+        rows = [["Ticker","Price","6M Return","1Y Return","Alpha","Score"]]
         for _, r in enhancements.head(10).iterrows():
             try:
-                rows.append([str(r.get("Ticker","N/A")),
-                             f"{currency}{float(r.get('Current Price',0)):.2f}",
-                             f"{float(r.get('12M Return',0)):.2%}",
-                             f"{float(r.get('Alpha vs SPY (12M)',0)):.2%}",
-                             f"{float(r.get('Score',0)):.3f}"])
-            except (ValueError, TypeError): continue
-        _pdf_section(story, h_style, "Enhancement Recommendations", rows,
-                     [0.9*inch,1.1*inch,1.2*inch,1.1*inch,1.2*inch], '#7c3aed', '#f5f3ff', page_break=True)
+                alpha_val = float(r.get(alpha_col, 0)) if alpha_col else 0.0
+                rows.append([
+                    str(r.get("Ticker","N/A")),
+                    f"{currency}{float(r.get('Current Price',0)):.2f}",
+                    f"{float(r.get('6M Return',0)):.2%}",
+                    f"{float(r.get('12M Return',0)):.2%}",
+                    f"{alpha_val:.2%}",
+                    f"{float(r.get('Score',0)):.3f}",
+                ])
+            except (ValueError, TypeError):
+                continue
+        story.append(_tbl(rows,
+            [0.9*inch,0.9*inch,0.9*inch,0.9*inch,0.9*inch,0.8*inch], PURPLE, LPURPLE))
+        story.append(Paragraph(
+            "* Alpha measured against selected benchmark over 12 months.", note_style))
 
     pdf.build(story)
     buffer.seek(0)
@@ -490,25 +592,19 @@ st.markdown("""
 def cached_fetch_market_data(tickers, period):
     try:
         data = yf.download(list(tickers), period=period, auto_adjust=True, progress=False, threads=True)["Close"]
-        if isinstance(data, pd.Series): data = data.to_frame(name=tickers[0])
-        return data.dropna(how="all")
+        return (data.to_frame(name=tickers[0]) if isinstance(data, pd.Series) else data).dropna(how="all")
     except Exception: return pd.DataFrame()
 
 
 def get_latest_prices(price_data, tickers):
     if "_price_cache" not in st.session_state: st.session_state._price_cache = {}
     latest = price_data.iloc[-1] if len(price_data) > 0 else pd.Series()
-    result = {}
-    for t in tickers:
-        price = latest.get(t) if t in latest.index else None
-        if pd.notna(price) and price > 0:
-            result[t] = (float(price), False)
-            st.session_state._price_cache[t] = float(price)
-        elif t in st.session_state._price_cache:
-            result[t] = (st.session_state._price_cache[t], True)
-        else:
-            result[t] = (np.nan, False)
-    return result
+    def _get(t):
+        p = latest.get(t) if t in latest.index else None
+        if pd.notna(p) and p > 0:
+            st.session_state._price_cache[t] = float(p); return float(p), False
+        return (st.session_state._price_cache[t], True) if t in st.session_state._price_cache else (np.nan, False)
+    return {t: _get(t) for t in tickers}
 
 
 _QUOTE_TYPE_MAP = {
@@ -656,10 +752,8 @@ def fetch_ticker_metadata(tickers):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_enhancement_recommendations(): return generate_enhancement_recommendations()
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_sector_recommendations(): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5)
-
 @st.cache_data(show_spinner=False)
 def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
 
@@ -670,14 +764,10 @@ def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio
 
 @st.cache_data(show_spinner=False)
 def detect_vol_regime(returns, window=60):
-    rv = returns.rolling(window).std() * np.sqrt(252)
-    rv = rv.dropna()
+    rv = (returns.rolling(window).std() * np.sqrt(252)).dropna()
     if rv.empty: return "N/A", "#64748b", 0.0
-    latest = float(rv.iloc[-1])
-    pct    = float(rv.rank(pct=True).iloc[-1])
-    if pct < 0.33: return "LOW VOL",    "#22c55e", latest
-    if pct < 0.66: return "NORMAL VOL", "#f59e0b", latest
-    return "HIGH VOL", "#ef4444", latest
+    latest, pct = float(rv.iloc[-1]), float(rv.rank(pct=True).iloc[-1])
+    return ("LOW VOL","#22c55e",latest) if pct<.33 else ("NORMAL VOL","#f59e0b",latest) if pct<.66 else ("HIGH VOL","#ef4444",latest)
 
 
 # ==========================================================
@@ -745,25 +835,7 @@ _light = st.session_state.get("light_mode", False)
 px.defaults.template = "portfolio_light" if _light else "portfolio_dark"
 
 if _light:
-    st.markdown("""
-<style>
-:root {
-    --bg-base:#f6f8fc;
-    --bg-surface:#ffffff;
-    --bg-elevated:#f1f5f9;
-    --bg-card:#ffffff;
-    --border:#e2e8f0;
-    --accent:#2563eb;
-    --accent-glow:rgba(37,99,235,.12);
-    --positive:#16a34a;
-    --negative:#dc2626;
-    --warning:#d97706;
-    --text-primary:#0f172a;
-    --text-secondary:#334155;
-    --text-muted:#64748b;
-}
-</style>
-""", unsafe_allow_html=True)
+    st.markdown("<style>:root{--bg-base:#f6f8fc;--bg-surface:#fff;--bg-elevated:#f1f5f9;--bg-card:#fff;--border:#e2e8f0;--accent:#2563eb;--accent-glow:rgba(37,99,235,.12);--positive:#16a34a;--negative:#dc2626;--warning:#d97706;--text-primary:#0f172a;--text-secondary:#334155;--text-muted:#64748b;}</style>", unsafe_allow_html=True)
 
 threshold        = threshold_pct        / 100
 max_weight       = max_weight_pct       / 100
@@ -788,13 +860,10 @@ if uploaded_file is None:
 
 _file_id = getattr(uploaded_file, "file_id", uploaded_file.name)
 if st.session_state.get("_last_file_id") != _file_id:
-    for _k in ("data_loaded", "selected_asset", "risk_summary", "drawdown_series",
-               "frontier", "optimal_weights", "_opt_key", "_portfolio_cache",
-               "_benchmark_cache"):
+    for _k in ("data_loaded","selected_asset","risk_summary","drawdown_series",
+               "frontier","optimal_weights","_opt_key","_portfolio_cache","_benchmark_cache"):
         st.session_state.pop(_k, None)
     st.session_state["_last_file_id"] = _file_id
-
-# Bust only the benchmark cache when benchmark ticker changes
 if st.session_state.get("_last_benchmark") != benchmark:
     st.session_state.pop("_benchmark_cache", None)
     st.session_state["_last_benchmark"] = benchmark
@@ -827,8 +896,7 @@ if "_portfolio_cache" not in st.session_state:
     tickers       = df["Ticker"].unique().tolist()
     tickers_tuple = tuple(tickers)
 
-    # Market detection
-    _market   = "IN" if sum(1 for t in tickers if t.endswith(".NS") or t.endswith(".BO")) >= len(tickers)/2 else "US"
+    _market   = "IN" if sum(t.endswith((".NS",".BO")) for t in tickers) >= len(tickers)/2 else "US"
     _currency = "₹" if _market == "IN" else "$"
     _rf_rate  = 0.065 if _market == "IN" else 0.05
 
@@ -941,8 +1009,7 @@ regime_color     = _cache["regime_color"]
 latest_vol       = _cache["latest_vol"]
 
 # ── Benchmark fetch — separate cache, refreshes on ticker change ───────────
-_bm_keys_required = {"benchmark_returns", "risk_summary", "health_score"}
-if "_benchmark_cache" not in st.session_state or not _bm_keys_required.issubset(st.session_state.get("_benchmark_cache", {})):
+if not {"benchmark_returns","risk_summary","health_score"}.issubset(st.session_state.get("_benchmark_cache",{})):
     with st.spinner(f"Fetching benchmark data ({benchmark})…"):
         _bm_data = cached_fetch_market_data((benchmark,), lookback)
     _benchmark_returns = None
@@ -1018,6 +1085,9 @@ with col_pdf:
                 benchmark_returns = benchmark_returns,
                 enhancements      = enhancements_pdf,
                 currency          = _currency,
+                benchmark_name    = benchmark_name,
+                pl_summary        = pl_summary,
+                portfolio_xirr    = portfolio_xirr,
             )
         st.download_button(
             "📄 Click to Download",
@@ -1039,27 +1109,11 @@ tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
 
 # ── TAB 1: OVERVIEW ────────────────────────────────────────
 with tab1:
-    st.markdown(f"""
-    <div style="padding:18px 24px;border-radius:var(--radius);
-        background:linear-gradient(135deg,{regime_color}18 0%,{regime_color}08 100%);
-        border:1px solid {regime_color}40;border-left:4px solid {regime_color};
-        display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:16px;">
-      <div>
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-            color:{regime_color};margin-bottom:5px;">Volatility Regime</div>
-        <div style="font-size:22px;font-weight:700;color:var(--text-primary);letter-spacing:-0.02em;">{regime}</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-            color:var(--text-muted);margin-bottom:5px;">Current Vol</div>
-        <div style="font-size:22px;font-weight:700;color:var(--text-primary);">{latest_vol:.1%}</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-            color:var(--text-muted);margin-bottom:5px;">Health Score</div>
-        <div style="font-size:22px;font-weight:700;color:var(--text-primary);">{health_score}</div>
-      </div>
-    </div>""", unsafe_allow_html=True)
+    stat_banner([
+        ("Volatility Regime", regime),
+        ("Current Vol",       f"{latest_vol:.1%}"),
+        ("Health Score",      health_score),
+    ], accent=regime_color)
 
     section_header("Key Metrics")
     c1,c2,c3,c4,c5 = st.columns(5)
@@ -1072,7 +1126,7 @@ with tab1:
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
     section_header("Returns & P/L")
     cA, cB, cC, cD = st.columns(4)
-    xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr is not None and not np.isnan(portfolio_xirr) else "N/A"
+    xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr and not np.isnan(portfolio_xirr) else "N/A"
     cA.metric("XIRR (Portfolio)", xirr_display)
     cB.metric("Amount Invested",  f"{_currency}{amount_invested:,.0f}")
     unreal_pct = (unrealized_gain / amount_invested) if amount_invested > 0 else None
@@ -1377,10 +1431,8 @@ with tab3:
 
     # ── Method selector: on_change busts the opt cache, no manual rerun needed ──
     def _on_method_change():
-        st.session_state.pop("_opt_key", None)
-        st.session_state.pop("optimal_weights", None)
-        st.session_state["opt_method"] = st.session_state.get("opt_method_radio",
-                                         st.session_state.get("opt_method", "Max Sharpe"))
+        for k in ("_opt_key","optimal_weights"): st.session_state.pop(k, None)
+        st.session_state["opt_method"] = st.session_state.get("opt_method_radio", st.session_state.get("opt_method","Max Sharpe"))
 
     st.radio(
         "Method",
@@ -1823,15 +1875,10 @@ with tab5:
                     _ts      = _content.get("pubDate", "") or _item.get("providerPublishTime", "")
 
                     # Format timestamp
-                    if isinstance(_ts, (int, float)):
-                        import datetime as _dt
-                        _ts = _dt.datetime.utcfromtimestamp(_ts).strftime("%d %b %Y, %H:%M UTC")
-                    elif isinstance(_ts, str) and _ts:
-                        try:
-                            import dateutil.parser as _dp
-                            _ts = _dp.parse(_ts).strftime("%d %b %Y, %H:%M UTC")
-                        except Exception:
-                            pass
+                    try:
+                        import datetime as _dt, dateutil.parser as _dp
+                        _ts = _dt.datetime.utcfromtimestamp(_ts).strftime("%d %b %Y, %H:%M UTC") if isinstance(_ts,(int,float)) else (_dp.parse(_ts).strftime("%d %b %Y, %H:%M UTC") if isinstance(_ts,str) and _ts else _ts)
+                    except Exception: pass
 
                     st.markdown(f"""
                     <div style="padding:12px 16px;margin-bottom:8px;border-radius:var(--radius);
@@ -1875,9 +1922,7 @@ with tab6:
 
         def _rule_engine(x):
             if pd.isna(x): return "No Data"
-            if x < -0.10:  return "Sell"
-            if x > 0.20:   return "Buy"
-            return "Hold"
+            return "Sell" if x < -0.10 else "Buy" if x > 0.20 else "Hold"
 
         pm_df["Action"] = pm_df["Relative Performance"].apply(_rule_engine)
         pm_df = pm_df.sort_values("Relative Performance", ascending=False).reset_index(drop=True)
