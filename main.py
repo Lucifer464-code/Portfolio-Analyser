@@ -1253,17 +1253,22 @@ with tab2:
         sc1, sc2 = st.columns(2)
         with sc1:
             section_header("Sector Breakdown")
-            # Treemap
+            # Build per-ticker treemap data
+            _treemap_df = df[df["Sector"] != "Unknown"][["Ticker","Sector","Current Weight"]].copy()
+            _treemap_df = _treemap_df.rename(columns={"Current Weight": "Weight"})
+
             _sec_fig = px.treemap(
-                _sec_df, path=["Sector"], values="Weight",
-                color="Weight", color_continuous_scale="Blues",
-                custom_data=["Holdings"],
+                _treemap_df,
+                path=["Sector", "Ticker"],
+                values="Weight",
+                color="Weight",
+                color_continuous_scale="Blues",
             )
             _sec_fig.update_traces(
                 texttemplate="<b>%{label}</b><br>%{value:.1%}",
-                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<br>Holdings: %{customdata[0]}<extra></extra>",
+                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
             )
-            _sec_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
+            _sec_fig.update_layout(height=380, margin=dict(l=0,r=0,t=0,b=0),
                                    coloraxis_showscale=False)
             st.plotly_chart(_sec_fig, use_container_width=True)
 
