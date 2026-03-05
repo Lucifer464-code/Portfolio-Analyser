@@ -1257,35 +1257,61 @@ with tab2:
             _treemap_df = df[df["Sector"] != "Unknown"][["Ticker","Sector","Current Weight"]].copy()
             _treemap_df = _treemap_df.rename(columns={"Current Weight": "Weight"})
 
+            # Assign a distinct colour per sector
+            _SECTOR_COLOURS = {
+                "Technology":             "#3b82f6",
+                "Communication Services": "#8b5cf6",
+                "Consumer Discretionary": "#f59e0b",
+                "Consumer Staples":       "#10b981",
+                "Financials":             "#06b6d4",
+                "Financial Services":     "#06b6d4",
+                "Healthcare":             "#ec4899",
+                "Industrials":            "#f97316",
+                "Energy":                 "#eab308",
+                "Utilities":              "#14b8a6",
+                "Real Estate":            "#a78bfa",
+                "Materials":              "#84cc16",
+                "ETF":                    "#64748b",
+                "Index":                  "#94a3b8",
+            }
+            _default_palette = ["#3b82f6","#8b5cf6","#f59e0b","#10b981",
+                                 "#06b6d4","#ec4899","#f97316","#eab308",
+                                 "#14b8a6","#a78bfa","#84cc16","#64748b"]
+            _sectors = _treemap_df["Sector"].unique().tolist()
+            _colour_map = {}
+            for i, s in enumerate(_sectors):
+                _colour_map[s] = _SECTOR_COLOURS.get(s, _default_palette[i % len(_default_palette)])
+
+            # Assign colour to each row — sector-level colour, slightly dimmed for tickers
+            def _tile_colour(row):
+                base = _colour_map.get(row["Sector"], "#3b82f6")
+                return base
+            _treemap_df["Color"] = _treemap_df.apply(_tile_colour, axis=1)
+
             _sec_fig = px.treemap(
                 _treemap_df,
                 path=["Sector", "Ticker"],
                 values="Weight",
-                color="Weight",
-                color_continuous_scale=[
-                    [0.0,  "#1e3a5f"],
-                    [0.35, "#1d4ed8"],
-                    [0.65, "#3b82f6"],
-                    [1.0,  "#93c5fd"],
-                ],
+                color="Sector",
+                color_discrete_map=_colour_map,
             )
             _sec_fig.update_traces(
-                texttemplate="<b>%{label}</b><br><span style='font-size:11px'>%{value:.1%}</span>",
-                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<br>Parent: %{parent}<extra></extra>",
-                textfont=dict(size=13, family="Inter, Segoe UI, sans-serif"),
-                insidetextfont=dict(color="white"),
+                texttemplate="<b>%{label}</b><br>%{value:.1%}",
+                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
+                textfont=dict(size=13, family="Inter, Segoe UI, sans-serif", color="white"),
                 marker=dict(
-                    line=dict(width=2, color="#0f172a"),
-                    pad=dict(t=24, l=4, r=4, b=4),
+                    line=dict(width=3, color="#0f172a"),
+                    pad=dict(t=28, l=6, r=6, b=6),
+                    cornerradius=6,
                 ),
                 root_color="#0f172a",
             )
             _sec_fig.update_layout(
-                height=400,
+                height=420,
                 margin=dict(l=0, r=0, t=0, b=0),
-                coloraxis_showscale=False,
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter, Segoe UI, sans-serif", color="white"),
             )
             st.plotly_chart(_sec_fig, use_container_width=True)
 
