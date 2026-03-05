@@ -661,7 +661,7 @@ def cached_enhancement_recommendations(): return generate_enhancement_recommenda
 def cached_sector_recommendations(): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5)
 
 @st.cache_data(show_spinner=False)
-def cached_3m_relative_performance(tickers): return compute_portfolio_3m_relative_performance(list(tickers))
+def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
 
 
 # ==========================================================
@@ -1871,7 +1871,7 @@ with tab6:
     section_header("3-Month Relative Performance — Current Holdings")
     try:
         with st.spinner("Computing 3M relative performance…"):
-            pm_df = cached_3m_relative_performance(tickers_tuple)
+            pm_df = cached_3m_relative_performance(tickers_tuple, benchmark)
 
         def _rule_engine(x):
             if pd.isna(x): return "No Data"
