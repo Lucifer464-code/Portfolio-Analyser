@@ -969,6 +969,7 @@ if "_portfolio_cache" not in st.session_state:
         "amount_invested": amount_invested,
         "unrealized_gain": unrealized_gain,
         "realised_gain":   realised_gain,
+        "pl_summary":      pl_summary,
         "portfolio_xirr":  portfolio_xirr,
         "weights_series":  weights_series,
         "portfolio_returns": portfolio_returns,
@@ -983,6 +984,8 @@ if "_portfolio_cache" not in st.session_state:
     st.session_state["data_loaded"] = True
 
 # ── Read everything from cache ──────────────────────────────
+# Safe defaults in case cache is partially populated
+pl_summary, portfolio_xirr, benchmark_returns = {}, None, None
 _cache           = st.session_state["_portfolio_cache"]
 transactions     = _cache["transactions"]
 df               = _cache["df"]
@@ -998,6 +1001,7 @@ amount_invested  = _cache["amount_invested"]
 unrealized_gain  = _cache["unrealized_gain"]
 realised_gain    = _cache["realised_gain"]
 portfolio_xirr   = _cache["portfolio_xirr"]
+pl_summary       = _cache.get("pl_summary", {})
 weights_series   = _cache["weights_series"]
 portfolio_returns= _cache["portfolio_returns"]
 risk_summary     = _cache["risk_summary"]
