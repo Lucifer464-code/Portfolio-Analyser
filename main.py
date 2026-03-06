@@ -41,6 +41,14 @@ from asset_analytics_engine import (
     compute_asset_drawdown, get_asset_fundamental_table,
 )
 from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics
+from external_apis import (
+    finnhub_earnings_surprises, finnhub_price_target, finnhub_recommendations,
+    finnhub_insider_sentiment, finnhub_portfolio_consensus,
+    finnhub_stock_metrics, finnhub_company_profile, finnhub_peers, finnhub_company_news,
+    fred_macro_snapshot,
+    sec_insider_transactions,
+    wsb_sentiment,
+)
 
 # ── Page config ────────────────────────────────────────────
 st.set_page_config(layout="wide", page_title="Portfolio Analyser", page_icon="📈")
@@ -59,165 +67,362 @@ pio.templates["portfolio_dark"] = go.layout.Template(
 )
 px.defaults.template = "portfolio_dark"
 
-pio.templates["portfolio_light"] = go.layout.Template(
-    layout=go.Layout(
-        paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
-        font=dict(family="DM Sans, sans-serif", color="#334155", size=12),
-        colorway=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16"],
-        xaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#e2e8f0", tickfont=dict(color="#64748b")),
-        yaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#e2e8f0", tickfont=dict(color="#64748b")),
-        legend=dict(bgcolor="rgba(255,255,255,0.9)", bordercolor="#e2e8f0", borderwidth=1),
-        title=dict(font=dict(color="#0f172a", size=14)),
-    )
-)
 
 # ── CSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* =========================================================
-   THEME VARIABLES
+   DESIGN TOKENS — SINGLE DARK THEME
 ========================================================= */
 
-/* ---- DARK (default) ---- */
-:root{
---bg-base:#080d18;
---bg-surface:#0b1120;
---bg-elevated:#111827;
---bg-card:#0f1a2e;
---border:#1a2744;
---accent:#3b82f6;
---accent-glow:rgba(59,130,246,.15);
---positive:#22c55e;
---negative:#ef4444;
---warning:#f59e0b;
---text-primary:#e2e8f0;
---text-secondary:#94a3b8;
---text-muted:#64748b;
---radius:12px;
---radius-sm:8px;
-}
+:root {
+  /* Surface hierarchy — clearly distinct levels */
+  --bg-base:       #080f1e;
+  --bg-surface:    #0d1a2e;
+  --bg-elevated:   #132338;
+  --bg-card:       #0f1e33;
 
-/* ---- LIGHT ---- */
-.light-mode{
---bg-base:#f6f8fc;
---bg-surface:#ffffff;
---bg-elevated:#f1f5f9;
---bg-card:#ffffff;
---border:#e2e8f0;
---accent:#2563eb;
---accent-glow:rgba(37,99,235,.12);
---positive:#16a34a;
---negative:#dc2626;
---warning:#d97706;
---text-primary:#0f172a;
---text-secondary:#334155;
---text-muted:#64748b;
+  /* Borders — visible but not harsh */
+  --border:        #1e3a5f;
+  --border-subtle: #162d4a;
+
+  /* Brand accent */
+  --accent:        #3b82f6;
+  --accent-dim:    #1d4ed8;
+  --accent-glow:   rgba(59,130,246,0.24);
+  --accent-glow2:  rgba(59,130,246,0.09);
+
+  /* Semantic colors */
+  --positive:      #22c55e;
+  --positive-dim:  #15803d;
+  --positive-glow: rgba(34,197,94,0.18);
+  --negative:      #ef4444;
+  --negative-glow: rgba(239,68,68,0.18);
+  --warning:       #f59e0b;
+  --warning-glow:  rgba(245,158,11,0.18);
+  --purple:        #8b5cf6;
+  --purple-glow:   rgba(139,92,246,0.18);
+  --cyan:          #06b6d4;
+  --cyan-glow:     rgba(6,182,212,0.18);
+
+  /* Typography */
+  --text-primary:  #e8f0fe;
+  --text-secondary:#7a98c0;
+  --text-muted:    #3d5a7a;
+
+  /* Shape */
+  --radius:        12px;
+  --radius-sm:     8px;
+  --radius-xs:     5px;
+
+  /* Elevation */
+  --shadow:        0 4px 24px rgba(0,0,0,0.55);
+  --shadow-lg:     0 10px 48px rgba(0,0,0,0.65);
+  --shadow-accent: 0 8px 32px rgba(59,130,246,0.22);
 }
 
 /* =========================================================
-   GLOBAL
+   TYPE SCALE
+   10px — badges/labels
+   11px — captions/metadata
+   12px — body small / table data
+   13px — body default
+   14px — card titles
+   16px — section values
+   24px — metric numbers
+   28px — page title
 ========================================================= */
 
-html,body,[class*="css"]{
-font-family:'DM Sans',sans-serif!important;
-color:var(--text-primary);
+/* =========================================================
+   GLOBAL RESET
+========================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, [class*="css"] {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  font-size: 13px;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.main,.block-container{
-background:var(--bg-base)!important;
-padding-top:1.5rem!important;
+.main, .block-container {
+  background: var(--bg-base) !important;
+  padding-top: 1.25rem !important;
 }
 
-h1,h2,h3,h4{
-font-weight:600!important;
-letter-spacing:-.02em!important;
-color:var(--text-primary)!important;
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ── Headings ── */
+h1, h2, h3, h4 {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.025em !important;
+  color: var(--text-primary) !important;
 }
+h2 { font-size: 1rem !important; margin-bottom: 0.6rem !important; }
+h3 { font-size: 0.875rem !important; }
 
-h2{font-size:1.1rem!important;margin-bottom:1rem!important}
-h3{font-size:.95rem!important}
+p, li { color: var(--text-secondary); font-size: 13px; }
+code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !important; }
 
-p,li,span{color:var(--text-secondary)}
-code,.stMetric label{font-family:'DM Mono',monospace!important}
+/* ── Live pulse ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+}
 
 /* =========================================================
    SIDEBAR
 ========================================================= */
 
-[data-testid="stSidebar"]{
-background:var(--bg-surface)!important;
-border-right:1px solid var(--border)!important;
+[data-testid="stSidebar"] {
+  background: var(--bg-surface) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+/* Sidebar section labels */
+.sidebar-group-label {
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+  padding: 14px 0 6px 2px !important;
+  display: block !important;
+}
+
+.sidebar-divider {
+  border: none !important;
+  border-top: 1px solid var(--border-subtle) !important;
+  margin: 6px 0 10px 0 !important;
 }
 
 /* =========================================================
-   METRICS
+   METRIC CARDS
 ========================================================= */
 
-div[data-testid="stMetric"]{
-background:linear-gradient(145deg,var(--bg-card),var(--bg-elevated))!important;
-border:1px solid var(--border)!important;
-border-top:2px solid var(--accent)!important;
-border-radius:var(--radius)!important;
-padding:18px 20px!important;
-min-height:110px!important;
-display:flex!important;
-flex-direction:column!important;
-justify-content:space-between!important;
-transition:.18s ease;
+div[data-testid="stMetric"] {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-top: 2px solid var(--accent) !important;
+  border-radius: var(--radius) !important;
+  padding: 18px 20px 16px !important;
+  min-height: 108px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  box-shadow: var(--shadow) !important;
+  position: relative !important;
+  overflow: hidden !important;
 }
 
-div[data-testid="stMetric"]:hover{
-transform:translateY(-2px)!important;
-box-shadow:0 8px 28px var(--accent-glow)!important;
+div[data-testid="stMetric"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, var(--accent-glow2) 0%, transparent 55%);
+  pointer-events: none;
+  border-radius: var(--radius);
 }
 
-div[data-testid="stMetricValue"]{
-font-size:1.6rem!important;
-font-weight:600!important;
-color:var(--text-primary)!important;
+div[data-testid="stMetric"]:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: var(--shadow-accent) !important;
+}
+
+div[data-testid="stMetricValue"] {
+  font-size: 1.65rem !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.04em !important;
+  font-family: 'Inter', sans-serif !important;
+  line-height: 1.1 !important;
+}
+
+div[data-testid="stMetricLabel"] > div {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.11em !important;
+  color: var(--text-muted) !important;
+  margin-bottom: 6px !important;
+}
+
+div[data-testid="stMetricDelta"] {
+  font-size: 12px !important;
+  font-weight: 600 !important;
 }
 
 /* =========================================================
    TABS
 ========================================================= */
 
-.stTabs [data-baseweb="tab-list"]{
-gap:3px!important;
-background:var(--bg-surface)!important;
-padding:5px!important;
-border-radius:var(--radius)!important;
-border:1px solid var(--border)!important;
-margin-bottom:1.5rem!important;
+.stTabs [data-baseweb="tab-list"] {
+  gap: 2px !important;
+  background: var(--bg-surface) !important;
+  padding: 4px !important;
+  border-radius: var(--radius) !important;
+  border: 1px solid var(--border) !important;
+  margin-bottom: 1.75rem !important;
+  box-shadow: var(--shadow) !important;
 }
 
-.stTabs [aria-selected="true"]{
-background:var(--bg-elevated)!important;
-color:var(--text-primary)!important;
-border-bottom:2px solid var(--accent)!important;
+.stTabs [data-baseweb="tab"] {
+  border-radius: var(--radius-sm) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 8px 16px !important;
+  color: var(--text-muted) !important;
+  transition: all 0.16s ease !important;
+  letter-spacing: 0.01em !important;
+  border-bottom: none !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+  color: var(--text-secondary) !important;
+  background: var(--bg-elevated) !important;
+}
+
+.stTabs [aria-selected="true"] {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 16px var(--accent-glow) !important;
+  border-bottom: none !important;
 }
 
 /* =========================================================
-   TABLES & ALERTS
+   TABLES & DATAFRAMES
 ========================================================= */
 
-.stDataFrame{
-border:1px solid var(--border)!important;
-border-radius:var(--radius)!important;
-overflow:hidden!important;
+.stDataFrame {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  overflow: hidden !important;
+  box-shadow: var(--shadow) !important;
+  font-size: 12px !important;
 }
 
-.stAlert{
-background:var(--bg-elevated)!important;
-border:1px solid var(--border)!important;
-border-radius:var(--radius)!important;
-color:var(--text-secondary)!important;
+/* =========================================================
+   ALERTS
+========================================================= */
+
+.stAlert {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
 }
 
-hr{
-border-color:var(--border)!important;
-margin:1.5rem 0!important;
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.stButton > button {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  padding: 10px 22px !important;
+  letter-spacing: 0.03em !important;
+  transition: all 0.18s ease !important;
+  box-shadow: 0 4px 14px var(--accent-glow) !important;
+}
+
+.stButton > button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px var(--accent-glow) !important;
+}
+
+.stDownloadButton > button {
+  background: linear-gradient(135deg, var(--positive) 0%, var(--positive-dim) 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  padding: 10px 22px !important;
+  box-shadow: 0 4px 14px var(--positive-glow) !important;
+  transition: all 0.18s ease !important;
+}
+
+.stDownloadButton > button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px var(--positive-glow) !important;
+}
+
+/* =========================================================
+   INPUTS & SELECTS
+========================================================= */
+
+.stSelectbox > div > div,
+.stTextInput > div > div,
+.stNumberInput > div > div {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.stSelectbox > div > div:focus-within,
+.stTextInput > div > div:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow2) !important;
+}
+
+/* Sliders */
+.stSlider > div > div > div > div {
+  background: linear-gradient(90deg, var(--accent), var(--accent-dim)) !important;
+}
+
+/* File uploader */
+.stFileUploader {
+  border-radius: var(--radius) !important;
+}
+
+/* Expanders */
+.streamlit-expanderHeader {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text-primary) !important;
+  transition: all 0.15s ease !important;
+  padding: 12px 16px !important;
+}
+
+.streamlit-expanderHeader:hover {
+  border-color: var(--accent) !important;
+  background: var(--bg-elevated) !important;
+}
+
+.streamlit-expanderContent {
+  border: 1px solid var(--border) !important;
+  border-top: none !important;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm) !important;
+  background: var(--bg-card) !important;
+  padding: 16px !important;
+}
+
+hr {
+  border: none !important;
+  border-top: 1px solid var(--border-subtle) !important;
+  margin: 1.25rem 0 !important;
 }
 
 </style>
@@ -227,20 +432,27 @@ margin:1.5rem 0!important;
 # ==========================================================
 
 def empty_state(icon, title, subtitle=""):
+    sub_html = (f'<div style="font-size:11px;color:var(--text-muted);max-width:300px;'
+                f'margin:0 auto;line-height:1.6;">{subtitle}</div>') if subtitle else ""
     st.markdown(f"""
-    <div style="text-align:center;padding:52px 24px;border:1px dashed var(--border);
-        border-radius:var(--radius);background:var(--bg-surface);margin:8px 0;">
-        <div style="font-size:36px;margin-bottom:14px;opacity:0.6;">{icon}</div>
-        <div style="font-size:14px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">{title}</div>
-        {"" if not subtitle else f'<div style="font-size:12px;color:var(--text-muted);">{subtitle}</div>'}
+    <div style="text-align:center;padding:60px 32px;border-radius:var(--radius);
+        background:radial-gradient(ellipse at 50% 0%,var(--bg-elevated) 0%,var(--bg-surface) 70%);
+        border:1px dashed var(--border);margin:8px 0;">
+        <div style="font-size:42px;margin-bottom:18px;opacity:0.45;filter:grayscale(0.2);">{icon}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text-secondary);
+            margin-bottom:8px;letter-spacing:-0.01em;">{title}</div>
+        {sub_html}
     </div>""", unsafe_allow_html=True)
 
 
-def section_header(title):
+def section_header(title, color="var(--accent)"):
     st.markdown(f"""
-    <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
-        color:var(--text-muted);border-bottom:1px solid var(--border);
-        padding-bottom:8px;margin:24px 0 16px 0;">{title}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin:28px 0 12px 0;">
+      <div style="width:3px;height:16px;border-radius:2px;flex-shrink:0;
+          background:linear-gradient(180deg,{color},{color}99);"></div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;
+          text-transform:uppercase;color:var(--text-secondary);">{title}</div>
+    </div>
     """, unsafe_allow_html=True)
 
 
@@ -285,17 +497,21 @@ def stat_banner(items, accent="#3b82f6"):
     for i, item in enumerate(items):
         label, value = item[0], item[1]
         colour = item[2] if len(item) > 2 else "var(--text-primary)"
-        align = "left" if i == 0 else ("right" if i == len(items)-1 else "center")
-        cells += (f"<div style='text-align:{align}'>"
-                  f"<div style='font-size:10px;font-weight:600;letter-spacing:.1em;"
-                  f"text-transform:uppercase;color:{accent};margin-bottom:5px'>{label}</div>"
-                  f"<div style='font-size:22px;font-weight:700;color:{colour}'>{value}</div>"
+        divider = (f"<div style='width:1px;height:40px;background:rgba(255,255,255,0.07);"
+                   f"flex-shrink:0;'></div>") if i > 0 else ""
+        cells += (f"{divider}<div style='padding:0 28px;flex:1;text-align:center;'>"
+                  f"<div style='font-size:9px;font-weight:700;letter-spacing:0.14em;"
+                  f"text-transform:uppercase;color:{accent};margin-bottom:8px;"
+                  f"opacity:0.9;'>{label}</div>"
+                  f"<div style='font-size:26px;font-weight:700;color:{colour};"
+                  f"letter-spacing:-0.04em;line-height:1;'>{value}</div>"
                   f"</div>")
     st.markdown(
-        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-        f"padding:18px 24px;border-radius:var(--radius);background:linear-gradient("
-        f"135deg,{accent}18 0%,{accent}08 100%);border:1px solid {accent}40;"
-        f"border-left:4px solid {accent};margin-bottom:24px;gap:16px'>{cells}</div>",
+        f"<div style='display:flex;align-items:center;"
+        f"padding:22px 24px;border-radius:var(--radius);margin-bottom:24px;"
+        f"background:linear-gradient(135deg,{accent}1a 0%,{accent}08 50%,transparent 100%);"
+        f"border:1px solid {accent}35;border-left:3px solid {accent};"
+        f"box-shadow:0 4px 32px {accent}14;'>{cells}</div>",
         unsafe_allow_html=True)
 
 
@@ -566,19 +782,35 @@ def generate_portfolio_pdf(df, risk_summary, weights_series, optimal_weights,
 # ==========================================================
 
 st.markdown("""
-<div style="display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:14px;
-    background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-card) 100%);
-    border:1px solid var(--border);
-    margin-top:32px;margin-bottom:28px;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
-  <div style="width:46px;height:46px;border-radius:12px;flex-shrink:0;
-      background:linear-gradient(135deg,#2563eb 0%,#60a5fa 100%);
-      display:flex;align-items:center;justify-content:center;font-size:22px;
-      box-shadow:0 4px 16px rgba(59,130,246,0.45);">📈</div>
-  <div>
-    <div style="font-size:20px;font-weight:700;color:var(--text-primary);letter-spacing:-0.03em;
-        line-height:1.2;">Portfolio Analyser</div>
-    <div style="font-size:11px;color:var(--accent);margin-top:3px;letter-spacing:0.1em;font-weight:500;">
-        INSTITUTIONAL DASHBOARD</div>
+<div style="display:flex;align-items:center;justify-content:space-between;
+    padding:22px 28px;border-radius:16px;margin:28px 0 28px 0;
+    background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-card) 60%,var(--bg-base) 100%);
+    border:1px solid var(--border);box-shadow:var(--shadow-lg);">
+  <div style="display:flex;align-items:center;gap:18px;">
+    <div style="width:52px;height:52px;border-radius:14px;flex-shrink:0;position:relative;
+        background:linear-gradient(135deg,#1d4ed8 0%,#3b82f6 55%,#60a5fa 100%);
+        display:flex;align-items:center;justify-content:center;font-size:24px;
+        box-shadow:0 6px 28px rgba(59,130,246,0.55);">
+      📈
+      <div style="position:absolute;inset:0;border-radius:14px;
+          background:linear-gradient(135deg,rgba(255,255,255,0.18),transparent);"></div>
+    </div>
+    <div>
+      <div style="font-size:22px;font-weight:700;color:var(--text-primary);
+          letter-spacing:-0.04em;line-height:1.15;">Portfolio Analyser</div>
+      <div style="display:flex;align-items:center;gap:7px;margin-top:5px;">
+        <div style="width:7px;height:7px;border-radius:50%;background:#22c55e;
+            box-shadow:0 0 8px #22c55e;animation:pulse-dot 2.4s ease-in-out infinite;"></div>
+        <div style="font-size:10px;color:var(--accent);letter-spacing:0.14em;
+            font-weight:700;text-transform:uppercase;">Institutional Dashboard</div>
+      </div>
+    </div>
+  </div>
+  <div style="text-align:right;line-height:1.7;">
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);">
+      Real-time portfolio analytics</div>
+    <div style="font-size:10px;color:var(--text-muted);opacity:0.6;">
+      Powered by yfinance &amp; Streamlit</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -750,12 +982,42 @@ def fetch_ticker_metadata(tickers):
     return pd.DataFrame(rows).set_index("Ticker")
 
 
+@st.cache_data(show_spinner=False)
+def cached_compute_returns(price_data):
+    return compute_returns(price_data)
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_enhancement_recommendations(): return generate_enhancement_recommendations()
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_sector_recommendations(): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5)
 @st.cache_data(show_spinner=False)
 def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
+
+# ── External API caches ─────────────────────────────────────
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_fred_macro(key):                  return fred_macro_snapshot(key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_finnhub_earnings(ticker, key):    return finnhub_earnings_surprises(ticker, key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_finnhub_target(ticker, key):      return finnhub_price_target(ticker, key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_finnhub_recs(ticker, key):        return finnhub_recommendations(ticker, key)
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_finnhub_insider(ticker, key):     return finnhub_insider_sentiment(ticker, key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_finnhub_consensus(tickers, key):  return finnhub_portfolio_consensus(list(tickers), key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_finnhub_metrics(ticker, key):     return finnhub_stock_metrics(ticker, key)
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_finnhub_profile(ticker, key):     return finnhub_company_profile(ticker, key)
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_finnhub_peers(ticker, key):       return finnhub_peers(ticker, key)
+@st.cache_data(ttl=1800,  show_spinner=False)
+def cached_finnhub_news(ticker, key):        return finnhub_company_news(ticker, key)
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_sec_insider(ticker):              return sec_insider_transactions(ticker)
+@st.cache_data(ttl=1800,  show_spinner=False)
+def cached_wsb(tickers):                     return wsb_sentiment(list(tickers))
 
 
 # ==========================================================
@@ -775,8 +1037,21 @@ def detect_vol_regime(returns, window=60):
 # ==========================================================
 
 with st.sidebar:
-    st.header("Configuration")
-    uploaded_file        = st.file_uploader("Upload Portfolio CSV", type="csv")
+    st.markdown("""
+    <div style="padding:18px 4px 14px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px;">
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);
+          letter-spacing:-0.02em;">Portfolio Analyser</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:3px;
+          text-transform:uppercase;letter-spacing:0.1em;">Configuration</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── DATA ───────────────────────────────────────────────
+    st.markdown('<span class="sidebar-group-label">Data</span>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload Portfolio CSV", type="csv", label_visibility="collapsed")
+
+    # ── BENCHMARK & PROFILE ────────────────────────────────
+    st.markdown('<hr class="sidebar-divider"><span class="sidebar-group-label">Market Settings</span>', unsafe_allow_html=True)
     benchmark_map = {
         "S&P 500":   "^GSPC",
         "NIFTY 50":  "^NSEI",
@@ -822,20 +1097,20 @@ with st.sidebar:
         st.session_state.pop("custom_benchmark",      None)
         st.session_state.pop("_last_custom_checked",  None)
         st.session_state.pop("_custom_valid",         None)
-    risk_profile         = st.selectbox("Risk Profile", list(RISK_PROFILES.keys()))
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    threshold_pct        = st.slider("Rebalance Threshold (%)",  0.0, 10.0,  2.0, 0.1)
-    max_weight_pct       = st.slider("Max Position Size (%)",    5.0, 50.0, 15.0, 1.0)
+    risk_profile = st.selectbox("Risk Profile", list(RISK_PROFILES.keys()))
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.toggle("☀️ Light Theme", value=False, key="light_mode")
+    # ── REBALANCING ────────────────────────────────────────
+    st.markdown('<hr class="sidebar-divider"><span class="sidebar-group-label">Rebalancing</span>', unsafe_allow_html=True)
+    threshold_pct  = st.slider("Rebalance Threshold (%)", 0.0, 10.0,  2.0, 0.1)
+    max_weight_pct = st.slider("Max Position Size (%)",   5.0, 50.0, 15.0, 1.0)
 
-_light = st.session_state.get("light_mode", False)
-px.defaults.template = "portfolio_light" if _light else "portfolio_dark"
+px.defaults.template = "portfolio_dark"
 
-if _light:
-    st.markdown("<style>:root{--bg-base:#f6f8fc;--bg-surface:#fff;--bg-elevated:#f1f5f9;--bg-card:#fff;--border:#e2e8f0;--accent:#2563eb;--accent-glow:rgba(37,99,235,.12);--positive:#16a34a;--negative:#dc2626;--warning:#d97706;--text-primary:#0f172a;--text-secondary:#334155;--text-muted:#64748b;}</style>", unsafe_allow_html=True)
+# ── API keys from .streamlit/secrets.toml ──────────────────
+_FINNHUB_KEY = st.secrets.get("FINNHUB_KEY", "")
+_FRED_KEY    = st.secrets.get("FRED_KEY",    "")
+_FMP_KEY     = st.secrets.get("FMP_KEY",     "")
 
 threshold        = threshold_pct        / 100
 max_weight       = max_weight_pct       / 100
@@ -845,16 +1120,67 @@ if uploaded_file is None:
     st.session_state.pop("data_loaded",    None)
     st.session_state.pop("selected_asset", None)
     st.markdown("""
-    <div style="text-align:center;padding:80px 32px;border:1px dashed var(--border);
-        border-radius:var(--radius);background:var(--bg-surface);margin-top:24px;">
-        <div style="font-size:48px;margin-bottom:20px;">📂</div>
-        <div style="font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">
-            Upload your portfolio to begin</div>
-        <div style="font-size:13px;color:var(--text-muted);max-width:320px;margin:0 auto;">
-            Upload a CSV with columns: <strong style="color:var(--accent);">Ticker, Date, Action, Quantity, Price</strong>.
-            Action should be <strong style="color:var(--accent);">Buy</strong> or <strong style="color:var(--accent);">Sell</strong>.
-            Indian stocks: use <strong style="color:var(--accent);">.NS</strong> or
-            <strong style="color:var(--accent);">.BO</strong> suffixes.</div>
+    <div style="max-width:660px;margin:48px auto 0;text-align:center;">
+
+      <!-- Icon -->
+      <div style="width:76px;height:76px;margin:0 auto 24px;border-radius:20px;
+          background:linear-gradient(135deg,#1d4ed8,#3b82f6);
+          display:flex;align-items:center;justify-content:center;font-size:36px;
+          box-shadow:0 8px 36px rgba(59,130,246,0.45);position:relative;">
+        📊
+        <div style="position:absolute;inset:0;border-radius:20px;
+            background:linear-gradient(135deg,rgba(255,255,255,0.18),transparent);"></div>
+      </div>
+
+      <!-- Title -->
+      <div style="font-size:28px;font-weight:700;color:var(--text-primary);
+          letter-spacing:-0.04em;margin-bottom:12px;line-height:1.2;">
+        Institutional Portfolio Analytics</div>
+      <div style="font-size:14px;color:var(--text-muted);margin-bottom:36px;
+          line-height:1.75;max-width:460px;margin-left:auto;margin-right:auto;">
+        Upload your trade history to unlock risk analytics, portfolio optimisation,
+        performance attribution, and AI-driven enhancement recommendations.
+      </div>
+
+      <!-- CSV Format -->
+      <div style="padding:20px 24px;background:var(--bg-surface);border:1px solid var(--border);
+          border-radius:var(--radius);margin-bottom:24px;text-align:left;">
+        <div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;
+            letter-spacing:0.12em;margin-bottom:12px;">Required CSV Format</div>
+        <div style="font-family:'JetBrains Mono','DM Mono',monospace;font-size:12px;
+            color:var(--text-secondary);line-height:2;background:var(--bg-elevated);
+            border-radius:var(--radius-sm);padding:14px 16px;border:1px solid var(--border-subtle);">
+          <span style="color:var(--text-muted);">Ticker, Date, Action, Quantity, Price</span><br>
+          AAPL, 2023-01-15, <span style="color:#22c55e;">Buy</span>, 10, 135.20<br>
+          MSFT, 2023-02-10, <span style="color:#22c55e;">Buy</span>, 5, 252.75<br>
+          AAPL, 2024-06-01, <span style="color:#ef4444;">Sell</span>, 3, 189.50
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6;">
+          Indian stocks: append <strong style="color:var(--accent);">.NS</strong> (NSE) or
+          <strong style="color:var(--accent);">.BO</strong> (BSE) to the ticker.
+          Headers are flexible — column names are auto-detected.
+        </div>
+      </div>
+
+      <!-- Feature pills -->
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;">
+        <div style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:30px;font-size:12px;color:var(--text-secondary);font-weight:500;">
+          ⚠️ Risk Analytics</div>
+        <div style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:30px;font-size:12px;color:var(--text-secondary);font-weight:500;">
+          🎯 Portfolio Optimisation</div>
+        <div style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:30px;font-size:12px;color:var(--text-secondary);font-weight:500;">
+          📈 Performance Attribution</div>
+        <div style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:30px;font-size:12px;color:var(--text-secondary);font-weight:500;">
+          ✨ AI Screener</div>
+        <div style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:30px;font-size:12px;color:var(--text-secondary);font-weight:500;">
+          📥 PDF Report</div>
+      </div>
+
     </div>""", unsafe_allow_html=True)
     st.stop()
 
@@ -905,7 +1231,7 @@ if "_portfolio_cache" not in st.session_state:
     if price_data is None or price_data.empty:
         st.error("Unable to fetch price data."); st.stop()
 
-    returns = compute_returns(price_data)
+    returns = cached_compute_returns(price_data)
     if returns is None or returns.empty:
         st.error("Return computation failed."); st.stop()
 
@@ -1018,7 +1344,7 @@ if not {"benchmark_returns","risk_summary","health_score"}.issubset(st.session_s
         _bm_data = cached_fetch_market_data((benchmark,), lookback)
     _benchmark_returns = None
     if _bm_data is not None and not _bm_data.empty:
-        _bm_ret = compute_returns(_bm_data)
+        _bm_ret = cached_compute_returns(_bm_data)
         if _bm_ret is not None and not _bm_ret.empty:
             _benchmark_returns = _bm_ret.iloc[:, 0]
             _aligned = pd.concat([portfolio_returns.rename("Portfolio"),
@@ -1106,8 +1432,12 @@ with col_pdf:
 # ==========================================================
 
 tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
-    "📊  Overview","⚠️  Risk","🎯  Optimization",
-    "📈  Performance","🔍  Asset Analytics","✨  Enhancement",
+    "📊  Overview",
+    "⚠️  Risk",
+    "🎯  Optimization",
+    "📈  Performance",
+    "🔍  Asset Analytics",
+    "✨  Enhancement",
 ])
 
 
@@ -1149,7 +1479,7 @@ with tab1:
         at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
         if not at.empty:
             fig = px.pie(at, names="Asset Type", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#ffffff" if _light else "#080d18",width=2)))
+            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18", width=2)))
             fig.update_layout(title=dict(text="Asset Allocation",x=0.5), height=380,
                               margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
             st.plotly_chart(fig, use_container_width=True)
@@ -1160,7 +1490,7 @@ with tab1:
         sa = df[df["Sector"]!="Unknown"].groupby("Sector")["Market Value"].sum().reset_index()
         if not sa.empty:
             fig = px.pie(sa, names="Sector", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#ffffff" if _light else "#080d18",width=2)))
+            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18", width=2)))
             fig.update_layout(title=dict(text="Sector Allocation",x=0.5), height=380,
                               margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
             st.plotly_chart(fig, use_container_width=True)
@@ -1183,6 +1513,7 @@ with tab1:
     holdings_display["Ticker"] = holdings_display["Ticker"].apply(_cache_tag)
 
     styled = style_pl(holdings_display, ["Unrealised P/L", "P/L %"]).format({
+        "Quantity":      "{:,.0f}",
         "Avg Cost":      f"{_currency}{{:,.2f}}",
         "Current Price": f"{_currency}{{:,.2f}}",
         "Unrealised P/L":f"{_currency}{{:,.2f}}",
@@ -1196,15 +1527,29 @@ with tab1:
 with tab2:
 
     # ── Risk Summary ───────────────────────────────────────
-    section_header("Risk Summary")
+    section_header("Risk Summary", color="var(--negative)")
     pct_fields = {"Annual Return","Volatility","Max Drawdown","VaR 95%","CVaR 95%","Tracking Error","Correlation"}
     st.table(pd.DataFrame({k: f"{v:.2%}" if k in pct_fields else f"{v:.2f}"
                             for k,v in risk_summary.items()}.items(), columns=["Metric","Value"]))
 
+    # ── Macro Environment (FRED) ───────────────────────────
+    section_header("Macro Environment", color="var(--warning)")
+    _macro = cached_fred_macro(_FRED_KEY) if _FRED_KEY else {}
+    if _macro:
+        _mcols = st.columns(len(_macro))
+        for _col, (_mname, _md) in zip(_mcols, _macro.items()):
+            _delta_str = f"{_md['delta']:+.3f}" if _md.get("delta") is not None else None
+            _col.metric(_mname, _md["display"], delta=_delta_str,
+                        help=f"As of {_md['date']}")
+    else:
+        empty_state("📊", "Macro data unavailable", "FRED key not set")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
     # ── Rolling charts ─────────────────────────────────────
     c1, c2 = st.columns(2)
     with c1:
-        section_header("Rolling Volatility")
+        section_header("Rolling Volatility", color="var(--warning)")
         tf = st.radio("Timeframe",["1Y","3Y","5Y"],horizontal=True,key="vol_tf",label_visibility="collapsed")
         quick_chart(px.line(slice_tf(rolling_volatility(portfolio_returns), tf),
                             color_discrete_sequence=["#3b82f6"]))
@@ -1218,7 +1563,7 @@ with tab2:
             empty_state("📉","No benchmark data","Benchmark returns could not be fetched")
 
     # ── VaR / CVaR ─────────────────────────────────────────
-    section_header("Value at Risk & Expected Shortfall")
+    section_header("Value at Risk & Expected Shortfall", color="var(--negative)")
 
     _vc = var_cvar_summary(portfolio_returns)
 
@@ -1431,7 +1776,7 @@ with tab3:
                    "to beat consistently — a useful benchmark against which to judge every other method."},
     }
 
-    section_header("Optimisation Method")
+    section_header("Optimisation Method", color="var(--cyan)")
 
     # ── Method selector: on_change busts the opt cache, no manual rerun needed ──
     def _on_method_change():
@@ -1453,17 +1798,21 @@ with tab3:
     # Method info card
     info = METHOD_INFO.get(opt_method, {})
     st.markdown(f"""
-    <div style="display:flex;align-items:flex-start;gap:16px;padding:16px 20px;margin-top:16px;
-        border-radius:var(--radius);background:var(--bg-surface);
-        border:1px solid var(--border);border-left:3px solid var(--accent);margin-bottom:24px;">
-      <div style="font-size:28px;line-height:1;">{info.get('icon','🎯')}</div>
+    <div style="display:flex;align-items:flex-start;gap:18px;padding:18px 22px;margin-top:16px;
+        border-radius:var(--radius);
+        background:linear-gradient(135deg,var(--bg-surface) 0%,var(--bg-elevated) 100%);
+        border:1px solid var(--border);border-left:3px solid var(--accent);
+        margin-bottom:24px;box-shadow:var(--shadow);">
+      <div style="font-size:30px;line-height:1;flex-shrink:0;margin-top:2px;">{info.get('icon','🎯')}</div>
       <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text-primary);
+            margin-bottom:5px;letter-spacing:-0.01em;">
             {opt_method}
-            <span style="font-size:11px;font-weight:500;color:var(--accent);
-                margin-left:8px;letter-spacing:0.04em;">{info.get('tagline','')}</span>
+            <span style="font-size:10px;font-weight:700;color:var(--accent);
+                margin-left:10px;letter-spacing:0.08em;text-transform:uppercase;">
+                {info.get('tagline','')}</span>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">{info.get('desc','')}</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.7;">{info.get('desc','')}</div>
       </div>
     </div>""", unsafe_allow_html=True)
 
@@ -1616,13 +1965,13 @@ with tab3:
             d2.metric("Optimized DR", f"{dr_opt:.3f}", delta=f"{dr_opt-dr_cur:+.3f}")
 
         # ── Efficient frontier ─────────────────────────────
-        section_header("Efficient Frontier")
+        section_header("Efficient Frontier", color="var(--purple)")
         fig_f = go.Figure([
             go.Scatter(
                 x=frontier["Volatility"], y=frontier["Return"], mode="markers",
                 marker=dict(size=5, color=frontier["Sharpe"], colorscale="Blues", showscale=True,
-                            colorbar=dict(title=dict(text="Sharpe",font=dict(color="#334155" if _light else "#94a3b8")),
-                                          x=1.02,thickness=14,len=0.6,tickfont=dict(color="#334155" if _light else "#94a3b8"))),
+                            colorbar=dict(title=dict(text="Sharpe", font=dict(color="#94a3b8")),
+                                          x=1.02, thickness=14, len=0.6, tickfont=dict(color="#94a3b8"))),
                 name="Monte Carlo Simulations",
                 hovertemplate="<b>Return:</b> %{y:.2%}<br><b>Vol:</b> %{x:.2%}<extra></extra>",
             ),
@@ -1642,9 +1991,9 @@ with tab3:
         fig_f.update_layout(
             height=580, margin=dict(l=40,r=40,t=20,b=40), showlegend=True,
             legend=dict(orientation="v",yanchor="bottom",y=0.04,xanchor="left",x=0.02,
-                        bgcolor="rgba(255,255,255,0.92)" if _light else "rgba(11,17,32,0.92)",
-                        bordercolor="#3b82f6",borderwidth=1,
-                        font=dict(color="#0f172a" if _light else "#e2e8f0",size=12)))
+                        bgcolor="rgba(11,17,32,0.92)",
+                        bordercolor="#3b82f6", borderwidth=1,
+                        font=dict(color="#e2e8f0", size=12)))
         st.plotly_chart(fig_f, use_container_width=True)
 
     else:
@@ -1653,7 +2002,7 @@ with tab3:
 
 # ── TAB 4: PERFORMANCE ─────────────────────────────────────
 with tab4:
-    section_header("Performance Metrics")
+    section_header("Performance Metrics", color="var(--positive)")
     pm_tf = st.radio("Metrics Timeframe", ["1M","3M","6M","1Y","3Y","5Y","All"],
                      horizontal=True, index=3, key="pm_timeframe", label_visibility="collapsed")
     _pr_sliced = slice_tf(portfolio_returns, pm_tf) if pm_tf != "All" else portfolio_returns
@@ -1685,7 +2034,7 @@ with tab4:
         b4.metric("Beta",                  f"{pm['beta']:.2f}")
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-    section_header("Cumulative Returns")
+    section_header("Cumulative Returns", color="var(--positive)")
     tf = st.radio("Timeframe",["1M","3M","6M","1Y","3Y","5Y"],horizontal=True,
                   key="perf_timeframe",label_visibility="collapsed")
 
@@ -1797,6 +2146,50 @@ with tab5:
     asset_weight   = float(weights_series.get(selected_asset, 0))
     asset_stats    = get_asset_key_stats(selected_asset, asset_price, asset_returns, asset_weight)
 
+    # ── Company Profile (Finnhub) ──────────────────────────
+    _profile = cached_finnhub_profile(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
+    if _profile:
+        _logo_html = (f'<img src="{_profile["logo"]}" style="width:40px;height:40px;'
+                      f'border-radius:8px;object-fit:contain;background:#fff;padding:3px;">'
+                      ) if _profile.get("logo") else ""
+        _mktcap = _profile.get("marketCapitalization", 0)
+        _mktcap_str = (f"{_mktcap/1000:.2f}T" if _mktcap >= 1000
+                       else f"{_mktcap:.1f}B") if _mktcap else "—"
+        _web = _profile.get("weburl", "")
+        _web_html = (f'<a href="{_web}" target="_blank" style="color:var(--accent);'
+                     f'font-size:10px;text-decoration:none;">{_web.replace("https://","").rstrip("/")}'
+                     f'</a>') if _web else ""
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;gap:18px;padding:16px 20px;
+            margin-bottom:8px;border-radius:var(--radius);
+            background:var(--bg-surface);border:1px solid var(--border);
+            box-shadow:var(--shadow);">
+          {_logo_html}
+          <div style="flex:1;">
+            <div style="font-size:15px;font-weight:700;color:var(--text-primary);
+                letter-spacing:-0.02em;">{_profile.get('name', selected_asset)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:6px;">
+              <span style="font-size:11px;color:var(--text-muted);">
+                <span style="color:var(--text-secondary);font-weight:600;">Exchange</span>
+                &nbsp;{_profile.get('exchange','—')}</span>
+              <span style="font-size:11px;color:var(--text-muted);">
+                <span style="color:var(--text-secondary);font-weight:600;">Industry</span>
+                &nbsp;{_profile.get('finnhubIndustry','—')}</span>
+              <span style="font-size:11px;color:var(--text-muted);">
+                <span style="color:var(--text-secondary);font-weight:600;">Country</span>
+                &nbsp;{_profile.get('country','—')}</span>
+              <span style="font-size:11px;color:var(--text-muted);">
+                <span style="color:var(--text-secondary);font-weight:600;">IPO</span>
+                &nbsp;{_profile.get('ipo','—')}</span>
+              <span style="font-size:11px;color:var(--text-muted);">
+                <span style="color:var(--text-secondary);font-weight:600;">Mkt Cap</span>
+                &nbsp;${_mktcap_str}</span>
+              <span style="font-size:11px;">{_web_html}</span>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     section_header(f"{selected_asset} — Key Stats")
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("Portfolio Weight",  f"{asset_stats['weight']:.2%}")
@@ -1859,66 +2252,154 @@ with tab5:
         else:
             st.caption("No data")
 
-    # ── News Feed ──────────────────────────────────────────
+    # ── Analyst Consensus ────────────────────────
+    section_header("Analyst Consensus", color="var(--accent)")
+    _fh_target = cached_finnhub_target(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
+    _fh_recs   = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)   if _FINNHUB_KEY else pd.DataFrame()
+    if _fh_target:
+        _cur_px = df[df["Ticker"] == selected_asset]["Current Price"].values
+        _cur_px = float(_cur_px[0]) if len(_cur_px) > 0 and pd.notna(_cur_px[0]) else None
+        _pt1, _pt2, _pt3, _pt4 = st.columns(4)
+        _mean = _fh_target.get("mean")
+        _upside = f"{(_mean - _cur_px) / _cur_px:.1%} upside" if (_mean and _cur_px) else None
+        _pt1.metric("Target Mean",   f"{_currency}{_mean:.2f}"                      if _mean                    else "—", delta=_upside)
+        _pt2.metric("Target High",   f"{_currency}{_fh_target['high']:.2f}"         if _fh_target.get('high')   else "—")
+        _pt3.metric("Target Low",    f"{_currency}{_fh_target['low']:.2f}"          if _fh_target.get('low')    else "—")
+        _pt4.metric("Target Median", f"{_currency}{_fh_target['median']:.2f}"       if _fh_target.get('median') else "—")
+    if not _fh_recs.empty:
+        _rec_fig = go.Figure([
+            go.Bar(name="Strong Buy",  x=_fh_recs["Period"], y=_fh_recs["Strong Buy"],  marker_color="#15803d"),
+            go.Bar(name="Buy",         x=_fh_recs["Period"], y=_fh_recs["Buy"],          marker_color="#22c55e"),
+            go.Bar(name="Hold",        x=_fh_recs["Period"], y=_fh_recs["Hold"],          marker_color="#f59e0b"),
+            go.Bar(name="Sell",        x=_fh_recs["Period"], y=_fh_recs["Sell"],          marker_color="#ef4444"),
+            go.Bar(name="Strong Sell", x=_fh_recs["Period"], y=_fh_recs["Strong Sell"],  marker_color="#7f1d1d"),
+        ])
+        _rec_fig.update_layout(barmode="stack", height=260,
+                               margin=dict(l=0,r=0,t=0,b=0),
+                               legend=dict(orientation="h", y=1.02, x=0))
+        st.plotly_chart(_rec_fig, use_container_width=True)
+    elif not _fh_target:
+        empty_state("📊", "Analyst ratings unavailable",
+                    f"No Finnhub coverage for {selected_asset}")
+
+    # ── Earnings Surprises (Finnhub) ───────────────────────
+    section_header("Earnings Surprises", color="var(--purple)")
+    _fh_earn = cached_finnhub_earnings(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+    if not _fh_earn.empty:
+        def _style_result(val):
+            if val == "Beat":    return "color:#22c55e;font-weight:600"
+            if val == "Miss":    return "color:#ef4444;font-weight:600"
+            return "color:#f59e0b;font-weight:600"
+        st.dataframe(
+            _fh_earn.style.applymap(_style_result, subset=["Result"]),
+            use_container_width=True)
+    else:
+        empty_state("📊", "Earnings data unavailable",
+                    f"No Finnhub earnings history for {selected_asset}")
+
+    # ── Peer Companies (Finnhub) ───────────────────────────
+    section_header("Peer Companies", color="var(--text-secondary)")
+    _peers = cached_finnhub_peers(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else []
+    if _peers:
+        _peer_pills = "".join([
+            f'<span style="display:inline-block;padding:5px 12px;margin:4px;'
+            f'background:var(--bg-elevated);border:1px solid var(--border);'
+            f'border-radius:20px;font-size:12px;font-weight:600;'
+            f'color:var(--text-secondary);letter-spacing:0.02em;">{p}</span>'
+            for p in _peers if p != selected_asset
+        ])
+        st.markdown(f'<div style="margin:4px 0 8px;">{_peer_pills}</div>',
+                    unsafe_allow_html=True)
+    else:
+        st.caption("No peer data available.")
+
+    # ── WallStreetBets Sentiment ───────────────────────────
+    section_header("Reddit / WallStreetBets", color="var(--accent)")
+    _wsb_df  = cached_wsb(tickers_tuple)
+    _clean_t = selected_asset.upper().replace(".NS", "").replace(".BO", "")
+    _wsb_row = _wsb_df[_wsb_df["Ticker"] == _clean_t] if not _wsb_df.empty else pd.DataFrame()
+    if not _wsb_row.empty:
+        _w = _wsb_row.iloc[0]
+        _ws1, _ws2, _ws3, _ws4 = st.columns(4)
+        _ws1.metric("WSB Rank",  f"#{int(_w['WSB Rank'])}")
+        _ws2.metric("Mentions",  f"{int(_w['Mentions']):,}")
+        _ws3.metric("Sentiment", str(_w["Sentiment"]))
+        _ws4.metric("Upvotes",   f"{int(_w['Upvotes']):,}")
+    else:
+        empty_state("📊", f"{selected_asset} not trending on WSB",
+                    "Not in today's top mentions on r/wallstreetbets")
+
+    # ── News Feed (Finnhub) ────────────────────────────────
     section_header(f"Latest News — {selected_asset}")
-    try:
-        _news_raw = yf.Ticker(selected_asset).news
-        if _news_raw:
-            # Filter to content items only (type == "STORY" or no type key)
-            _stories = [
-                n for n in _news_raw
-                if isinstance(n, dict) and (
-                    n.get("type", "STORY") == "STORY" or "title" in n or
-                    (isinstance(n.get("content"), dict) and n["content"].get("title"))
-                )
-            ][:8]
-
-            if _stories:
-                for _item in _stories:
-                    # yfinance v0.2.x returns nested content dict; older versions use flat keys
-                    _content = _item.get("content", _item)
-                    _title   = _content.get("title",       _item.get("title",       "No title"))
-                    _source  = _content.get("provider", {}).get("displayName", "") or _item.get("publisher", "")
-                    _url     = _content.get("canonicalUrl", {}).get("url", "") or _item.get("link", "#")
-                    _ts      = _content.get("pubDate", "") or _item.get("providerPublishTime", "")
-
-                    # Format timestamp
-                    try:
-                        import datetime as _dt, dateutil.parser as _dp
-                        _ts = _dt.datetime.utcfromtimestamp(_ts).strftime("%d %b %Y, %H:%M UTC") if isinstance(_ts,(int,float)) else (_dp.parse(_ts).strftime("%d %b %Y, %H:%M UTC") if isinstance(_ts,str) and _ts else _ts)
-                    except Exception: pass
-
-                    st.markdown(f"""
-                    <div style="padding:12px 16px;margin-bottom:8px;border-radius:var(--radius);
-                        background:var(--bg-surface);border:1px solid var(--border);
-                        border-left:3px solid var(--accent);">
-                      <div style="font-size:13px;font-weight:600;color:var(--text-primary);
-                          margin-bottom:4px;line-height:1.4;">
-                        <a href="{_url}" target="_blank"
-                           style="color:var(--text-primary);text-decoration:none;">
-                          {_title}
-                        </a>
-                      </div>
-                      <div style="font-size:11px;color:var(--text-muted);">
-                        {_source}{' · ' + str(_ts) if _ts else ''}
-                      </div>
-                    </div>""", unsafe_allow_html=True)
-            else:
-                empty_state("📰", "No recent news", f"No news stories found for {selected_asset}")
-        else:
-            empty_state("📰", "No recent news", f"No news stories found for {selected_asset}")
-    except Exception as _e:
-        empty_state("📰", "News unavailable", f"Could not fetch news for {selected_asset}")
+    _news_df = cached_finnhub_news(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+    if not _news_df.empty:
+        for _, _nrow in _news_df.head(12).iterrows():
+            _ts_str = (_nrow["datetime"].strftime("%d %b %Y, %H:%M UTC")
+                       if pd.notna(_nrow["datetime"]) else "")
+            st.markdown(f"""
+            <div style="padding:14px 18px;margin-bottom:8px;border-radius:var(--radius);
+                background:var(--bg-surface);border:1px solid var(--border);
+                border-left:3px solid var(--accent);">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);
+                  margin-bottom:6px;line-height:1.5;">
+                <a href="{_nrow['url']}" target="_blank"
+                   style="color:var(--text-primary);text-decoration:none;">
+                  {_nrow['headline']}
+                </a>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="font-size:10px;font-weight:600;color:var(--accent);
+                    text-transform:uppercase;letter-spacing:0.06em;">{_nrow['source']}</div>
+                {f'<div style="width:3px;height:3px;border-radius:50%;background:var(--text-muted);"></div>'
+                 f'<div style="font-size:10px;color:var(--text-muted);">{_ts_str}</div>'
+                 if _ts_str else ''}
+              </div>
+            </div>""", unsafe_allow_html=True)
+    else:
+        empty_state("📰", "No recent news", f"No news found for {selected_asset} in the last 30 days")
 
 
 # ── TAB 6: ENHANCEMENT ─────────────────────────────────────
 with tab6:
+
+    # ── Portfolio-wide Analyst Consensus (Finnhub) ──────────
+    section_header("Analyst Consensus — All Holdings", color="var(--accent)")
+    with st.spinner("Fetching analyst ratings…"):
+        _cons_df = cached_finnhub_consensus(tickers_tuple, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+    if not _cons_df.empty:
+        _cA, _cB, _cC, _cD = st.columns(4)
+        _cA.metric("Strong Buy", int((_cons_df["Consensus"] == "Strong Buy").sum()))
+        _cB.metric("Buy",        int((_cons_df["Consensus"] == "Buy").sum()))
+        _cC.metric("Hold",       int((_cons_df["Consensus"] == "Hold").sum()))
+        _cD.metric("Sell / Strong Sell",
+                   int(_cons_df["Consensus"].isin(["Sell", "Strong Sell"]).sum()))
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        def _style_cons(val):
+            return {
+                "Strong Buy":  "color:#15803d;font-weight:700",
+                "Buy":         "color:#22c55e;font-weight:600",
+                "Hold":        "color:#f59e0b;font-weight:600",
+                "Sell":        "color:#ef4444;font-weight:600",
+                "Strong Sell": "color:#7f1d1d;font-weight:700",
+            }.get(val, "")
+        st.dataframe(
+            _cons_df.style.applymap(_style_cons, subset=["Consensus"]),
+            use_container_width=True)
+    else:
+        empty_state("📊", "Analyst consensus unavailable",
+                    "Finnhub coverage not found for these tickers")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
     st.markdown("""
-    <div style="padding:14px 18px;margin-bottom:24px;border-radius:var(--radius);
-        background:var(--bg-surface);border:1px solid var(--border);border-left:3px solid var(--accent);">
-      <div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:4px;">
-          Sector-Wise Enhancement Screener</div>
-      <div style="font-size:12px;color:var(--text-muted);">
+    <div style="padding:18px 22px;margin-bottom:24px;border-radius:var(--radius);
+        background:linear-gradient(135deg,var(--bg-surface) 0%,var(--bg-elevated) 100%);
+        border:1px solid var(--border);border-left:3px solid var(--accent);
+        box-shadow:var(--shadow);">
+      <div style="font-size:14px;font-weight:600;color:var(--text-primary);
+          margin-bottom:6px;letter-spacing:-0.01em;">Sector-Wise Enhancement Screener</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.65;">
           Top performing sectors and their best stocks ranked by 6 &amp; 12-month returns.
           Includes PE ratios and ROE. Refreshed every hour.</div>
     </div>""", unsafe_allow_html=True)
