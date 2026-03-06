@@ -1654,7 +1654,11 @@ with tab3:
 # ── TAB 4: PERFORMANCE ─────────────────────────────────────
 with tab4:
     section_header("Performance Metrics")
-    pm = get_performance_metrics(portfolio_returns, benchmark_returns, rf_rate=_rf_rate)
+    pm_tf = st.radio("Metrics Timeframe", ["1M","3M","6M","1Y","3Y","5Y","All"],
+                     horizontal=True, index=3, key="pm_timeframe", label_visibility="collapsed")
+    _pr_sliced = slice_tf(portfolio_returns, pm_tf) if pm_tf != "All" else portfolio_returns
+    _br_sliced = slice_tf(benchmark_returns, pm_tf) if (benchmark_returns is not None and pm_tf != "All") else benchmark_returns
+    pm = get_performance_metrics(_pr_sliced, _br_sliced, rf_rate=_rf_rate)
 
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Total Return",      f"{pm['total_return']:.2%}")
