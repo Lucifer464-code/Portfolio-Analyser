@@ -45,7 +45,7 @@ from external_apis import (
     finnhub_earnings_surprises, finnhub_price_target, finnhub_recommendations,
     finnhub_insider_sentiment, finnhub_portfolio_consensus,
     finnhub_stock_metrics, finnhub_company_profile, finnhub_peers, finnhub_company_news,
-    fred_macro_snapshot,
+    fred_macro_snapshot, india_macro_snapshot, yfinance_news,
     sec_insider_transactions,
     wsb_sentiment,
 )
@@ -919,6 +919,62 @@ _US_SECTOR_MAP = {
     "ARKK":"ETF","ARKG":"ETF","ARKW":"ETF","ARKF":"ETF","ARKQ":"ETF",
 }
 
+# Static sector map for popular NSE-listed Indian stocks
+_IN_SECTOR_MAP = {
+    # Technology / IT Services
+    "TCS.NS":"Technology","INFY.NS":"Technology","WIPRO.NS":"Technology",
+    "HCLTECH.NS":"Technology","TECHM.NS":"Technology","LTIM.NS":"Technology",
+    "MPHASIS.NS":"Technology","PERSISTENT.NS":"Technology","COFORGE.NS":"Technology",
+    "OFSS.NS":"Technology",
+    # Financials — Banks
+    "HDFCBANK.NS":"Financials","ICICIBANK.NS":"Financials","SBIN.NS":"Financials",
+    "KOTAKBANK.NS":"Financials","AXISBANK.NS":"Financials","INDUSINDBK.NS":"Financials",
+    "BANDHANBNK.NS":"Financials","FEDERALBNK.NS":"Financials","IDFCFIRSTB.NS":"Financials",
+    "RBLBANK.NS":"Financials",
+    # Financials — NBFCs & Insurance
+    "BAJFINANCE.NS":"Financials","BAJAJFINSV.NS":"Financials","SBILIFE.NS":"Financials",
+    "HDFCLIFE.NS":"Financials","ICICIPRULI.NS":"Financials","CHOLAFIN.NS":"Financials",
+    "MUTHOOTFIN.NS":"Financials","PFC.NS":"Financials","RECLTD.NS":"Financials",
+    # Consumer Discretionary
+    "TATAMOTORS.NS":"Consumer Discretionary","M&M.NS":"Consumer Discretionary",
+    "MARUTI.NS":"Consumer Discretionary","EICHERMOT.NS":"Consumer Discretionary",
+    "HEROMOTOCO.NS":"Consumer Discretionary","BAJAJ-AUTO.NS":"Consumer Discretionary",
+    "TITAN.NS":"Consumer Discretionary","TRENT.NS":"Consumer Discretionary",
+    "NYKAA.NS":"Consumer Discretionary","ZOMATO.NS":"Consumer Discretionary",
+    "PAYTM.NS":"Consumer Discretionary","DMART.NS":"Consumer Discretionary",
+    # Consumer Staples
+    "HINDUNILVR.NS":"Consumer Staples","ITC.NS":"Consumer Staples",
+    "NESTLEIND.NS":"Consumer Staples","BRITANNIA.NS":"Consumer Staples",
+    "DABUR.NS":"Consumer Staples","MARICO.NS":"Consumer Staples",
+    "GODREJCP.NS":"Consumer Staples","COLPAL.NS":"Consumer Staples",
+    "TATACONSUM.NS":"Consumer Staples","VBL.NS":"Consumer Staples",
+    # Healthcare / Pharma
+    "SUNPHARMA.NS":"Healthcare","DRREDDY.NS":"Healthcare","CIPLA.NS":"Healthcare",
+    "DIVISLAB.NS":"Healthcare","APOLLOHOSP.NS":"Healthcare","LUPIN.NS":"Healthcare",
+    "TORNTPHARM.NS":"Healthcare","BIOCON.NS":"Healthcare","AUROPHARMA.NS":"Healthcare",
+    "MAXHEALTH.NS":"Healthcare",
+    # Energy
+    "RELIANCE.NS":"Energy","ONGC.NS":"Energy","BPCL.NS":"Energy",
+    "IOC.NS":"Energy","GAIL.NS":"Energy","POWERGRID.NS":"Utilities",
+    "NTPC.NS":"Utilities","TATAPOWER.NS":"Utilities","ADANIGREEN.NS":"Utilities",
+    "ADANIPORTS.NS":"Industrials",
+    # Industrials / Infrastructure
+    "LT.NS":"Industrials","SIEMENS.NS":"Industrials","ABB.NS":"Industrials",
+    "BHEL.NS":"Industrials","HAL.NS":"Industrials","BEL.NS":"Industrials",
+    "IRFC.NS":"Industrials","IRCTC.NS":"Industrials","TIINDIA.NS":"Industrials",
+    # Materials
+    "TATASTEEL.NS":"Materials","JSWSTEEL.NS":"Materials","HINDALCO.NS":"Materials",
+    "SAIL.NS":"Materials","VEDL.NS":"Materials","COALINDIA.NS":"Materials",
+    "UPL.NS":"Materials","PIDILITIND.NS":"Materials","ASIANPAINT.NS":"Materials",
+    "BERGEPAINT.NS":"Materials",
+    # Conglomerates / Others
+    "ADANIENT.NS":"Industrials","ULTRACEMCO.NS":"Materials","AMBUJACEM.NS":"Materials",
+    "SHREECEM.NS":"Materials","GRASIM.NS":"Materials",
+    # Indian ETFs / Indices
+    "NIFTYBEES.NS":"ETF","JUNIORBEES.NS":"ETF","BANKBEES.NS":"ETF",
+    "ITBEES.NS":"ETF","GOLDBEES.NS":"ETF","LIQUIDBEES.NS":"ETF",
+}
+
 @st.cache_data(show_spinner=False)
 def fetch_ticker_metadata(tickers):
     import time as _time
@@ -946,7 +1002,11 @@ def fetch_ticker_metadata(tickers):
             except Exception:
                 pass
 
-        # Method 2: static sector map (instant, no network)
+        # Method 2: static sector maps (instant, no network)
+        if t in _IN_SECTOR_MAP:
+            _sec = _IN_SECTOR_MAP[t]
+            _atype = "ETF" if _sec == "ETF" else "Equity"
+            return t, t, _sec, _atype
         if t in _US_SECTOR_MAP:
             _sec = _US_SECTOR_MAP[t]
             _atype = "ETF" if _sec == "ETF" else "Equity"
@@ -987,15 +1047,19 @@ def cached_compute_returns(price_data):
     return compute_returns(price_data)
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def cached_enhancement_recommendations(): return generate_enhancement_recommendations()
+def cached_enhancement_recommendations(market="US"): return generate_enhancement_recommendations(market=market)
 @st.cache_data(ttl=3600, show_spinner=False)
-def cached_sector_recommendations(): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5)
+def cached_sector_recommendations(market="US"): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5, market=market)
 @st.cache_data(show_spinner=False)
 def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
 
 # ── External API caches ─────────────────────────────────────
 @st.cache_data(ttl=3600,  show_spinner=False)
 def cached_fred_macro(key):                  return fred_macro_snapshot(key)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_india_macro(key):                 return india_macro_snapshot(key)
+@st.cache_data(ttl=1800,  show_spinner=False)
+def cached_yf_news(ticker):                  return yfinance_news(ticker)
 @st.cache_data(ttl=3600,  show_spinner=False)
 def cached_finnhub_earnings(ticker, key):    return finnhub_earnings_surprises(ticker, key)
 @st.cache_data(ttl=3600,  show_spinner=False)
@@ -1400,7 +1464,7 @@ with col_pdf:
     if st.button("📥 Download PDF Report"):
         with st.spinner("Generating PDF…"):
             try:
-                enhancements_pdf = cached_enhancement_recommendations()
+                enhancements_pdf = cached_enhancement_recommendations(_market)
             except Exception:
                 enhancements_pdf = None
             pdf_bytes = generate_portfolio_pdf(
@@ -1532,9 +1596,12 @@ with tab2:
     st.table(pd.DataFrame({k: f"{v:.2%}" if k in pct_fields else f"{v:.2f}"
                             for k,v in risk_summary.items()}.items(), columns=["Metric","Value"]))
 
-    # ── Macro Environment (FRED) ───────────────────────────
+    # ── Macro Environment ───────────────────────────────────
     section_header("Macro Environment", color="var(--warning)")
-    _macro = cached_fred_macro(_FRED_KEY) if _FRED_KEY else {}
+    if _market == "IN":
+        _macro = cached_india_macro(_FRED_KEY)
+    else:
+        _macro = cached_fred_macro(_FRED_KEY) if _FRED_KEY else {}
     if _macro:
         _mcols = st.columns(len(_macro))
         for _col, (_mname, _md) in zip(_mcols, _macro.items()):
@@ -1542,7 +1609,7 @@ with tab2:
             _col.metric(_mname, _md["display"], delta=_delta_str,
                         help=f"As of {_md['date']}")
     else:
-        empty_state("📊", "Macro data unavailable", "FRED key not set")
+        empty_state("📊", "Macro data unavailable", "Could not fetch macro indicators")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
@@ -2146,15 +2213,38 @@ with tab5:
     asset_weight   = float(weights_series.get(selected_asset, 0))
     asset_stats    = get_asset_key_stats(selected_asset, asset_price, asset_returns, asset_weight)
 
-    # ── Company Profile (Finnhub) ──────────────────────────
-    _profile = cached_finnhub_profile(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
-    if _profile:
+    # ── Company Profile ─────────────────────────────────────
+    _is_indian = selected_asset.endswith((".NS", ".BO"))
+    _profile   = {} if _is_indian else (cached_finnhub_profile(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {})
+
+    # For Indian stocks, build profile from yfinance info
+    if not _profile:
+        try:
+            _yf_info = yf.Ticker(selected_asset).info
+            _profile = {
+                "name":                _yf_info.get("longName") or _yf_info.get("shortName") or selected_asset,
+                "exchange":            "NSE" if selected_asset.endswith(".NS") else ("BSE" if selected_asset.endswith(".BO") else _yf_info.get("exchange", "—")),
+                "finnhubIndustry":     _yf_info.get("industry") or _yf_info.get("sector") or "—",
+                "country":             _yf_info.get("country", "India" if _is_indian else "—"),
+                "ipo":                 str(_yf_info.get("ipoExpectedDate", "—")),
+                "marketCapitalization":(_yf_info.get("marketCap", 0) or 0) / 1e6,  # convert to millions to match Finnhub unit
+                "weburl":              _yf_info.get("website", ""),
+                "logo":                _yf_info.get("logo_url", ""),
+            }
+        except Exception:
+            pass
+
+    if _profile and _profile.get("name"):
         _logo_html = (f'<img src="{_profile["logo"]}" style="width:40px;height:40px;'
                       f'border-radius:8px;object-fit:contain;background:#fff;padding:3px;">'
                       ) if _profile.get("logo") else ""
-        _mktcap = _profile.get("marketCapitalization", 0)
-        _mktcap_str = (f"{_mktcap/1000:.2f}T" if _mktcap >= 1000
-                       else f"{_mktcap:.1f}B") if _mktcap else "—"
+        _mktcap = _profile.get("marketCapitalization", 0)  # in millions (USD for Finnhub, INR/M for yf fallback)
+        if _is_indian and _mktcap:
+            # yfinance returns market cap in INR; convert millions → crores (1 crore = 10M INR)
+            _mktcap_raw = (_mktcap * 1e6)   # back to INR
+            _mktcap_str = f"₹{_mktcap_raw/1e7:.0f}Cr" if _mktcap_raw >= 1e7 else f"₹{_mktcap_raw/1e5:.1f}L"
+        else:
+            _mktcap_str = (f"${_mktcap/1000:.2f}T" if _mktcap >= 1000 else f"${_mktcap:.1f}B") if _mktcap else "—"
         _web = _profile.get("weburl", "")
         _web_html = (f'<a href="{_web}" target="_blank" style="color:var(--accent);'
                      f'font-size:10px;text-decoration:none;">{_web.replace("https://","").rstrip("/")}'
@@ -2183,7 +2273,7 @@ with tab5:
                 &nbsp;{_profile.get('ipo','—')}</span>
               <span style="font-size:11px;color:var(--text-muted);">
                 <span style="color:var(--text-secondary);font-weight:600;">Mkt Cap</span>
-                &nbsp;${_mktcap_str}</span>
+                &nbsp;{_mktcap_str}</span>
               <span style="font-size:11px;">{_web_html}</span>
             </div>
           </div>
@@ -2252,86 +2342,101 @@ with tab5:
         else:
             st.caption("No data")
 
-    # ── Analyst Consensus ────────────────────────
+    # ── Analyst Consensus ─────────────────────────────────────
     section_header("Analyst Consensus", color="var(--accent)")
-    _fh_target = cached_finnhub_target(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
-    _fh_recs   = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)   if _FINNHUB_KEY else pd.DataFrame()
-    if _fh_target:
-        _cur_px = df[df["Ticker"] == selected_asset]["Current Price"].values
-        _cur_px = float(_cur_px[0]) if len(_cur_px) > 0 and pd.notna(_cur_px[0]) else None
-        _pt1, _pt2, _pt3, _pt4 = st.columns(4)
-        _mean = _fh_target.get("mean")
-        _upside = f"{(_mean - _cur_px) / _cur_px:.1%} upside" if (_mean and _cur_px) else None
-        _pt1.metric("Target Mean",   f"{_currency}{_mean:.2f}"                      if _mean                    else "—", delta=_upside)
-        _pt2.metric("Target High",   f"{_currency}{_fh_target['high']:.2f}"         if _fh_target.get('high')   else "—")
-        _pt3.metric("Target Low",    f"{_currency}{_fh_target['low']:.2f}"          if _fh_target.get('low')    else "—")
-        _pt4.metric("Target Median", f"{_currency}{_fh_target['median']:.2f}"       if _fh_target.get('median') else "—")
-    if not _fh_recs.empty:
-        _rec_fig = go.Figure([
-            go.Bar(name="Strong Buy",  x=_fh_recs["Period"], y=_fh_recs["Strong Buy"],  marker_color="#15803d"),
-            go.Bar(name="Buy",         x=_fh_recs["Period"], y=_fh_recs["Buy"],          marker_color="#22c55e"),
-            go.Bar(name="Hold",        x=_fh_recs["Period"], y=_fh_recs["Hold"],          marker_color="#f59e0b"),
-            go.Bar(name="Sell",        x=_fh_recs["Period"], y=_fh_recs["Sell"],          marker_color="#ef4444"),
-            go.Bar(name="Strong Sell", x=_fh_recs["Period"], y=_fh_recs["Strong Sell"],  marker_color="#7f1d1d"),
-        ])
-        _rec_fig.update_layout(barmode="stack", height=260,
-                               margin=dict(l=0,r=0,t=0,b=0),
-                               legend=dict(orientation="h", y=1.02, x=0))
-        st.plotly_chart(_rec_fig, use_container_width=True)
-    elif not _fh_target:
-        empty_state("📊", "Analyst ratings unavailable",
-                    f"No Finnhub coverage for {selected_asset}")
+    if _is_indian:
+        st.info("Analyst price targets and ratings are not available for NSE/BSE-listed stocks on the free data tier.")
+    else:
+        _fh_target = cached_finnhub_target(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
+        _fh_recs   = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)   if _FINNHUB_KEY else pd.DataFrame()
+        if _fh_target:
+            _cur_px = df[df["Ticker"] == selected_asset]["Current Price"].values
+            _cur_px = float(_cur_px[0]) if len(_cur_px) > 0 and pd.notna(_cur_px[0]) else None
+            _pt1, _pt2, _pt3, _pt4 = st.columns(4)
+            _mean = _fh_target.get("mean")
+            _upside = f"{(_mean - _cur_px) / _cur_px:.1%} upside" if (_mean and _cur_px) else None
+            _pt1.metric("Target Mean",   f"{_currency}{_mean:.2f}"                      if _mean                    else "—", delta=_upside)
+            _pt2.metric("Target High",   f"{_currency}{_fh_target['high']:.2f}"         if _fh_target.get('high')   else "—")
+            _pt3.metric("Target Low",    f"{_currency}{_fh_target['low']:.2f}"          if _fh_target.get('low')    else "—")
+            _pt4.metric("Target Median", f"{_currency}{_fh_target['median']:.2f}"       if _fh_target.get('median') else "—")
+        if not _fh_recs.empty:
+            _rec_fig = go.Figure([
+                go.Bar(name="Strong Buy",  x=_fh_recs["Period"], y=_fh_recs["Strong Buy"],  marker_color="#15803d"),
+                go.Bar(name="Buy",         x=_fh_recs["Period"], y=_fh_recs["Buy"],          marker_color="#22c55e"),
+                go.Bar(name="Hold",        x=_fh_recs["Period"], y=_fh_recs["Hold"],          marker_color="#f59e0b"),
+                go.Bar(name="Sell",        x=_fh_recs["Period"], y=_fh_recs["Sell"],          marker_color="#ef4444"),
+                go.Bar(name="Strong Sell", x=_fh_recs["Period"], y=_fh_recs["Strong Sell"],  marker_color="#7f1d1d"),
+            ])
+            _rec_fig.update_layout(barmode="stack", height=260,
+                                   margin=dict(l=0,r=0,t=0,b=0),
+                                   legend=dict(orientation="h", y=1.02, x=0))
+            st.plotly_chart(_rec_fig, use_container_width=True)
+        elif not _fh_target:
+            empty_state("📊", "Analyst ratings unavailable",
+                        f"No analyst coverage found for {selected_asset}")
 
-    # ── Earnings Surprises (Finnhub) ───────────────────────
+    # ── Earnings Surprises ────────────────────────────────────
     section_header("Earnings Surprises", color="var(--purple)")
-    _fh_earn = cached_finnhub_earnings(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
-    if not _fh_earn.empty:
-        def _style_result(val):
-            if val == "Beat":    return "color:#22c55e;font-weight:600"
-            if val == "Miss":    return "color:#ef4444;font-weight:600"
-            return "color:#f59e0b;font-weight:600"
-        st.dataframe(
-            _fh_earn.style.applymap(_style_result, subset=["Result"]),
-            use_container_width=True)
+    if _is_indian:
+        st.info("Earnings surprise history is not available for NSE/BSE-listed stocks on the free data tier.")
     else:
-        empty_state("📊", "Earnings data unavailable",
-                    f"No Finnhub earnings history for {selected_asset}")
+        _fh_earn = cached_finnhub_earnings(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+        if not _fh_earn.empty:
+            def _style_result(val):
+                if val == "Beat":    return "color:#22c55e;font-weight:600"
+                if val == "Miss":    return "color:#ef4444;font-weight:600"
+                return "color:#f59e0b;font-weight:600"
+            st.dataframe(
+                _fh_earn.style.applymap(_style_result, subset=["Result"]),
+                use_container_width=True)
+        else:
+            empty_state("📊", "Earnings data unavailable",
+                        f"No earnings history found for {selected_asset}")
 
-    # ── Peer Companies (Finnhub) ───────────────────────────
+    # ── Peer Companies ────────────────────────────────────────
     section_header("Peer Companies", color="var(--text-secondary)")
-    _peers = cached_finnhub_peers(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else []
-    if _peers:
-        _peer_pills = "".join([
-            f'<span style="display:inline-block;padding:5px 12px;margin:4px;'
-            f'background:var(--bg-elevated);border:1px solid var(--border);'
-            f'border-radius:20px;font-size:12px;font-weight:600;'
-            f'color:var(--text-secondary);letter-spacing:0.02em;">{p}</span>'
-            for p in _peers if p != selected_asset
-        ])
-        st.markdown(f'<div style="margin:4px 0 8px;">{_peer_pills}</div>',
-                    unsafe_allow_html=True)
+    if _is_indian:
+        st.info("Peer data is not available for NSE/BSE-listed stocks on the free data tier.")
     else:
-        st.caption("No peer data available.")
+        _peers = cached_finnhub_peers(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else []
+        if _peers:
+            _peer_pills = "".join([
+                f'<span style="display:inline-block;padding:5px 12px;margin:4px;'
+                f'background:var(--bg-elevated);border:1px solid var(--border);'
+                f'border-radius:20px;font-size:12px;font-weight:600;'
+                f'color:var(--text-secondary);letter-spacing:0.02em;">{p}</span>'
+                for p in _peers if p != selected_asset
+            ])
+            st.markdown(f'<div style="margin:4px 0 8px;">{_peer_pills}</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.caption("No peer data available.")
 
     # ── WallStreetBets Sentiment ───────────────────────────
-    section_header("Reddit / WallStreetBets", color="var(--accent)")
-    _wsb_df  = cached_wsb(tickers_tuple)
-    _clean_t = selected_asset.upper().replace(".NS", "").replace(".BO", "")
-    _wsb_row = _wsb_df[_wsb_df["Ticker"] == _clean_t] if not _wsb_df.empty else pd.DataFrame()
-    if not _wsb_row.empty:
-        _w = _wsb_row.iloc[0]
-        _ws1, _ws2, _ws3, _ws4 = st.columns(4)
-        _ws1.metric("WSB Rank",  f"#{int(_w['WSB Rank'])}")
-        _ws2.metric("Mentions",  f"{int(_w['Mentions']):,}")
-        _ws3.metric("Sentiment", str(_w["Sentiment"]))
-        _ws4.metric("Upvotes",   f"{int(_w['Upvotes']):,}")
-    else:
-        empty_state("📊", f"{selected_asset} not trending on WSB",
-                    "Not in today's top mentions on r/wallstreetbets")
+    if not _is_indian:
+        section_header("Reddit / WallStreetBets", color="var(--accent)")
+        _wsb_df  = cached_wsb(tickers_tuple)
+        _clean_t = selected_asset.upper().replace(".NS", "").replace(".BO", "")
+        _wsb_row = _wsb_df[_wsb_df["Ticker"] == _clean_t] if not _wsb_df.empty else pd.DataFrame()
+        if not _wsb_row.empty:
+            _w = _wsb_row.iloc[0]
+            _ws1, _ws2, _ws3, _ws4 = st.columns(4)
+            _ws1.metric("WSB Rank",  f"#{int(_w['WSB Rank'])}")
+            _ws2.metric("Mentions",  f"{int(_w['Mentions']):,}")
+            _ws3.metric("Sentiment", str(_w["Sentiment"]))
+            _ws4.metric("Upvotes",   f"{int(_w['Upvotes']):,}")
+        else:
+            empty_state("📊", f"{selected_asset} not trending on WSB",
+                        "Not in today's top mentions on r/wallstreetbets")
 
-    # ── News Feed (Finnhub) ────────────────────────────────
+    # ── News Feed ──────────────────────────────────────────
     section_header(f"Latest News — {selected_asset}")
-    _news_df = cached_finnhub_news(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+    if _is_indian:
+        _news_df = cached_yf_news(selected_asset)
+    else:
+        _news_df = cached_finnhub_news(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+        if _news_df.empty:
+            _news_df = cached_yf_news(selected_asset)
     if not _news_df.empty:
         for _, _nrow in _news_df.head(12).iterrows():
             _ts_str = (_nrow["datetime"].strftime("%d %b %Y, %H:%M UTC")
@@ -2362,10 +2467,14 @@ with tab5:
 # ── TAB 6: ENHANCEMENT ─────────────────────────────────────
 with tab6:
 
-    # ── Portfolio-wide Analyst Consensus (Finnhub) ──────────
+    # ── Portfolio-wide Analyst Consensus ─────────────────────
     section_header("Analyst Consensus — All Holdings", color="var(--accent)")
-    with st.spinner("Fetching analyst ratings…"):
-        _cons_df = cached_finnhub_consensus(tickers_tuple, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+    if _market == "IN":
+        st.info("Portfolio analyst consensus is not available for Indian exchange listings on the free data tier.")
+        _cons_df = pd.DataFrame()
+    else:
+        with st.spinner("Fetching analyst ratings…"):
+            _cons_df = cached_finnhub_consensus(tickers_tuple, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
     if not _cons_df.empty:
         _cA, _cB, _cC, _cD = st.columns(4)
         _cA.metric("Strong Buy", int((_cons_df["Consensus"] == "Strong Buy").sum()))
@@ -2386,19 +2495,20 @@ with tab6:
         st.dataframe(
             _cons_df.style.applymap(_style_cons, subset=["Consensus"]),
             use_container_width=True)
-    else:
+    elif _market != "IN":
         empty_state("📊", "Analyst consensus unavailable",
-                    "Finnhub coverage not found for these tickers")
+                    "No analyst coverage found for these tickers")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    st.markdown("""
+    _screener_universe = "NIFTY 500" if _market == "IN" else "S&P 500"
+    st.markdown(f"""
     <div style="padding:18px 22px;margin-bottom:24px;border-radius:var(--radius);
         background:linear-gradient(135deg,var(--bg-surface) 0%,var(--bg-elevated) 100%);
         border:1px solid var(--border);border-left:3px solid var(--accent);
         box-shadow:var(--shadow);">
       <div style="font-size:14px;font-weight:600;color:var(--text-primary);
-          margin-bottom:6px;letter-spacing:-0.01em;">Sector-Wise Enhancement Screener</div>
+          margin-bottom:6px;letter-spacing:-0.01em;">Sector-Wise Enhancement Screener — {_screener_universe}</div>
       <div style="font-size:12px;color:var(--text-muted);line-height:1.65;">
           Top performing sectors and their best stocks ranked by 6 &amp; 12-month returns.
           Includes PE ratios and ROE. Refreshed every hour.</div>
@@ -2437,7 +2547,7 @@ with tab6:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     with st.spinner("Analyzing sectors — may take ~15s on first load…"):
-        sector_recs = cached_sector_recommendations()
+        sector_recs = cached_sector_recommendations(_market)
 
     if not sector_recs:
         empty_state("🔍","No sector opportunities identified","Try again later")
