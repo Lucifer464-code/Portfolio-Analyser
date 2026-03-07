@@ -2431,12 +2431,7 @@ with tab5:
 
     # ── News Feed ──────────────────────────────────────────
     section_header(f"Latest News — {selected_asset}")
-    if _is_indian:
-        _news_df = cached_yf_news(selected_asset)
-    else:
-        _news_df = cached_finnhub_news(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
-        if _news_df.empty:
-            _news_df = cached_yf_news(selected_asset)
+    _news_df = cached_yf_news(selected_asset)
     if not _news_df.empty:
         for _, _nrow in _news_df.head(12).iterrows():
             _ts_str = (_nrow["datetime"].strftime("%d %b %Y, %H:%M UTC")
