@@ -284,6 +284,135 @@ def fred_series_history(series_id: str, api_key: str, periods: int = 60) -> pd.S
 
 
 # ==========================================================
+# INDIA MACRO — yfinance + FRED India series
+# ==========================================================
+
+def india_macro_snapshot(fred_api_key: str = "") -> dict:
+    """
+    Key macro indicators for Indian portfolios.
+    Uses yfinance for real-time data + FRED for CPI history.
+    Returns same format as fred_macro_snapshot().
+    """
+    import yfinance as yf
+
+    result = {}
+
+    # ── India 10Y Govt Bond Yield ────────────────────────
+    try:
+        _bond = yf.Ticker("IN10Y=X")
+        _hi   = _bond.history(period="5d")
+        if not _hi.empty:
+            _val  = float(_hi["Close"].dropna().iloc[-1])
+            _prev = float(_hi["Close"].dropna().iloc[-2]) if len(_hi) > 1 else None
+            result["India 10Y Yield"] = {
+                "value":   _val,
+                "display": f"{_val:.2f}%",
+                "date":    str(_hi.index[-1].date()),
+                "delta":   round(_val - _prev, 3) if _prev is not None else None,
+                "unit":    "%",
+            }
+    except Exception:
+        pass
+
+    # ── India VIX ────────────────────────────────────────
+    try:
+        _vix  = yf.Ticker("^INDIAVIX")
+        _hv   = _vix.history(period="5d")
+        if not _hv.empty:
+            _val  = float(_hv["Close"].dropna().iloc[-1])
+            _prev = float(_hv["Close"].dropna().iloc[-2]) if len(_hv) > 1 else None
+            result["India VIX"] = {
+                "value":   _val,
+                "display": f"{_val:.2f}",
+                "date":    str(_hv.index[-1].date()),
+                "delta":   round(_val - _prev, 3) if _prev is not None else None,
+                "unit":    "",
+            }
+    except Exception:
+        pass
+
+    # ── USD/INR Exchange Rate ─────────────────────────────
+    try:
+        _fx   = yf.Ticker("USDINR=X")
+        _hf   = _fx.history(period="5d")
+        if not _hf.empty:
+            _val  = float(_hf["Close"].dropna().iloc[-1])
+            _prev = float(_hf["Close"].dropna().iloc[-2]) if len(_hf) > 1 else None
+            result["USD/INR"] = {
+                "value":   _val,
+                "display": f"₹{_val:.2f}",
+                "date":    str(_hf.index[-1].date()),
+                "delta":   round(_val - _prev, 3) if _prev is not None else None,
+                "unit":    "",
+            }
+    except Exception:
+        pass
+
+    # ── India CPI YoY via FRED ───────────────────────────
+    if fred_api_key:
+        try:
+            obs = _fred_obs("INDCPIALLMINMEI", fred_api_key, limit=14)
+            if obs and len(obs) >= 13:
+                latest    = obs[0]["value"]
+                prev_year = obs[12]["value"]
+                yoy       = round(((latest - prev_year) / prev_year) * 100, 2) if prev_year else None
+                result["India CPI YoY"] = {
+                    "value":   yoy,
+                    "display": f"{yoy:+.2f}%" if yoy is not None else "—",
+                    "date":    obs[0]["date"],
+                    "delta":   None,
+                    "unit":    "%",
+                }
+        except Exception:
+            pass
+
+    # ── Nifty 50 (market pulse) ───────────────────────────
+    try:
+        _nifty = yf.Ticker("^NSEI")
+        _hn    = _nifty.history(period="5d")
+        if not _hn.empty:
+            _val  = float(_hn["Close"].dropna().iloc[-1])
+            _prev = float(_hn["Close"].dropna().iloc[-2]) if len(_hn) > 1 else None
+            _chg  = round((_val - _prev) / _prev * 100, 2) if _prev else None
+            result["NIFTY 50"] = {
+                "value":   _val,
+                "display": f"{_val:,.0f}",
+                "date":    str(_hn.index[-1].date()),
+                "delta":   _chg,
+                "unit":    "",
+            }
+    except Exception:
+        pass
+
+    return result
+
+
+def yfinance_news(ticker: str, max_items: int = 12) -> pd.DataFrame:
+    """
+    Fetch recent news for a ticker via yfinance.
+    Fallback for stocks not covered by Finnhub (e.g. Indian exchanges).
+    """
+    import yfinance as yf
+    try:
+        news = yf.Ticker(ticker).news or []
+        rows = []
+        for item in news[:max_items]:
+            rows.append({
+                "headline": item.get("title", ""),
+                "source":   item.get("publisher", ""),
+                "url":      item.get("link", ""),
+                "datetime": pd.to_datetime(item.get("providerPublishTime", 0), unit="s", utc=True),
+                "summary":  item.get("summary", ""),
+            })
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df = df.sort_values("datetime", ascending=False)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+# ==========================================================
 # FINANCIAL MODELING PREP
 # ==========================================================
 

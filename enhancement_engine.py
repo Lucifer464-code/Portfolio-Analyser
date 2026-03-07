@@ -27,13 +27,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # CONFIG
 # ----------------------------------------------------------
 
-BENCHMARK         = "SPY"
-LOOKBACK          = "3y"
-TOP_N             = 15
-SP500_FILE        = "sp500_constituents.csv"
+BENCHMARK          = "SPY"
+IN_BENCHMARK       = "^NSEI"
+LOOKBACK           = "3y"
+TOP_N              = 15
+SP500_FILE         = "sp500_constituents.csv"
+NIFTY500_FILE      = "nifty500_constituents.csv"
 SP500_MAX_AGE_DAYS = 7     # FIX 1: refresh constituent list weekly
-MAX_PE_WORKERS    = 3      # reduced for cloud rate-limit compliance
-MIN_HISTORY_DAYS  = 252    # require 1 full year of price history
+MAX_PE_WORKERS     = 3      # reduced for cloud rate-limit compliance
+MIN_HISTORY_DAYS   = 252    # require 1 full year of price history
+
+NIFTY500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 
 
 # ----------------------------------------------------------
@@ -69,6 +73,165 @@ def get_sp500_constituents(force_refresh: bool = False) -> pd.DataFrame:
     table.to_csv(SP500_FILE, index=False)
 
     return table
+
+
+# ----------------------------------------------------------
+# NIFTY 500 Constituents — live fetch from NSE + static fallback
+# ----------------------------------------------------------
+
+def _nifty_static_fallback() -> pd.DataFrame:
+    """~150 major NSE stocks as a static fallback when NSE fetch fails."""
+    data = [
+        # Information Technology
+        ("TCS.NS","Information Technology"),("INFY.NS","Information Technology"),
+        ("WIPRO.NS","Information Technology"),("HCLTECH.NS","Information Technology"),
+        ("TECHM.NS","Information Technology"),("LTIM.NS","Information Technology"),
+        ("MPHASIS.NS","Information Technology"),("PERSISTENT.NS","Information Technology"),
+        ("COFORGE.NS","Information Technology"),("OFSS.NS","Information Technology"),
+        ("KPITTECH.NS","Information Technology"),("TATAELXSI.NS","Information Technology"),
+        # Banks
+        ("HDFCBANK.NS","Banks"),("ICICIBANK.NS","Banks"),("SBIN.NS","Banks"),
+        ("KOTAKBANK.NS","Banks"),("AXISBANK.NS","Banks"),("INDUSINDBK.NS","Banks"),
+        ("BANDHANBNK.NS","Banks"),("FEDERALBNK.NS","Banks"),("IDFCFIRSTB.NS","Banks"),
+        ("RBLBANK.NS","Banks"),("PNB.NS","Banks"),("BANKBARODA.NS","Banks"),
+        ("CANBK.NS","Banks"),("UNIONBANK.NS","Banks"),("MAHABANK.NS","Banks"),
+        # Finance (NBFCs / Insurance)
+        ("BAJFINANCE.NS","Finance"),("BAJAJFINSV.NS","Finance"),
+        ("SBILIFE.NS","Finance"),("HDFCLIFE.NS","Finance"),("ICICIPRULI.NS","Finance"),
+        ("CHOLAFIN.NS","Finance"),("MUTHOOTFIN.NS","Finance"),("PFC.NS","Finance"),
+        ("RECLTD.NS","Finance"),("ICICIGI.NS","Finance"),("GICRE.NS","Finance"),
+        ("LICI.NS","Finance"),("M&MFIN.NS","Finance"),("SHRIRAMFIN.NS","Finance"),
+        # Consumer Goods (FMCG)
+        ("HINDUNILVR.NS","Consumer Goods"),("ITC.NS","Consumer Goods"),
+        ("NESTLEIND.NS","Consumer Goods"),("BRITANNIA.NS","Consumer Goods"),
+        ("DABUR.NS","Consumer Goods"),("MARICO.NS","Consumer Goods"),
+        ("GODREJCP.NS","Consumer Goods"),("COLPAL.NS","Consumer Goods"),
+        ("TATACONSUM.NS","Consumer Goods"),("VBL.NS","Consumer Goods"),
+        ("PGHH.NS","Consumer Goods"),("EMAMILTD.NS","Consumer Goods"),
+        ("JYOTHYLAB.NS","Consumer Goods"),("GILLETTE.NS","Consumer Goods"),
+        # Automobile & Auto Components
+        ("TATAMOTORS.NS","Automobile and Auto Components"),
+        ("MARUTI.NS","Automobile and Auto Components"),
+        ("EICHERMOT.NS","Automobile and Auto Components"),
+        ("HEROMOTOCO.NS","Automobile and Auto Components"),
+        ("BAJAJ-AUTO.NS","Automobile and Auto Components"),
+        ("BOSCHLTD.NS","Automobile and Auto Components"),
+        ("MOTHERSON.NS","Automobile and Auto Components"),
+        ("BALKRISIND.NS","Automobile and Auto Components"),
+        ("MRF.NS","Automobile and Auto Components"),
+        ("APOLLOTYRE.NS","Automobile and Auto Components"),
+        ("BHARATFORG.NS","Automobile and Auto Components"),
+        ("TIINDIA.NS","Automobile and Auto Components"),
+        # Pharmaceuticals & Biotechnology
+        ("SUNPHARMA.NS","Pharmaceuticals & Biotechnology"),
+        ("DRREDDY.NS","Pharmaceuticals & Biotechnology"),
+        ("CIPLA.NS","Pharmaceuticals & Biotechnology"),
+        ("DIVISLAB.NS","Pharmaceuticals & Biotechnology"),
+        ("LUPIN.NS","Pharmaceuticals & Biotechnology"),
+        ("TORNTPHARM.NS","Pharmaceuticals & Biotechnology"),
+        ("BIOCON.NS","Pharmaceuticals & Biotechnology"),
+        ("AUROPHARMA.NS","Pharmaceuticals & Biotechnology"),
+        ("ALKEM.NS","Pharmaceuticals & Biotechnology"),
+        ("ABBOTINDIA.NS","Pharmaceuticals & Biotechnology"),
+        ("ZYDUSLIFE.NS","Pharmaceuticals & Biotechnology"),
+        ("IPCALAB.NS","Pharmaceuticals & Biotechnology"),
+        # Healthcare Services
+        ("APOLLOHOSP.NS","Healthcare Services"),("MAXHEALTH.NS","Healthcare Services"),
+        ("FORTIS.NS","Healthcare Services"),("METROPOLIS.NS","Healthcare Services"),
+        ("LALPATHLAB.NS","Healthcare Services"),
+        # Energy
+        ("RELIANCE.NS","Energy"),("ONGC.NS","Energy"),("BPCL.NS","Energy"),
+        ("IOC.NS","Energy"),("GAIL.NS","Energy"),("OIL.NS","Energy"),
+        ("MGL.NS","Energy"),("IGL.NS","Energy"),("PETRONET.NS","Energy"),
+        ("HINDPETRO.NS","Energy"),
+        # Power / Utilities
+        ("POWERGRID.NS","Power"),("NTPC.NS","Power"),("TATAPOWER.NS","Power"),
+        ("ADANIGREEN.NS","Power"),("ADANIPOWER.NS","Power"),
+        ("TORNTPOWER.NS","Power"),("CESC.NS","Power"),("NHPC.NS","Power"),
+        ("SJVN.NS","Power"),("IREDA.NS","Power"),
+        # Capital Goods / Industrials
+        ("LT.NS","Capital Goods"),("SIEMENS.NS","Capital Goods"),
+        ("ABB.NS","Capital Goods"),("BHEL.NS","Capital Goods"),
+        ("HAL.NS","Capital Goods"),("BEL.NS","Capital Goods"),
+        ("HAVELLS.NS","Capital Goods"),("VOLTAS.NS","Capital Goods"),
+        ("CUMMINSIND.NS","Capital Goods"),("THERMAX.NS","Capital Goods"),
+        ("AIAENG.NS","Capital Goods"),("GRINDWELL.NS","Capital Goods"),
+        # Metals & Mining
+        ("TATASTEEL.NS","Metals & Mining"),("JSWSTEEL.NS","Metals & Mining"),
+        ("HINDALCO.NS","Metals & Mining"),("SAIL.NS","Metals & Mining"),
+        ("VEDL.NS","Metals & Mining"),("COALINDIA.NS","Metals & Mining"),
+        ("NMDC.NS","Metals & Mining"),("NATIONALUM.NS","Metals & Mining"),
+        ("HINDCOPPER.NS","Metals & Mining"),("APLAPOLLO.NS","Metals & Mining"),
+        # Chemicals
+        ("PIDILITIND.NS","Chemicals"),("UPL.NS","Chemicals"),
+        ("AAPL.NS","Chemicals"),("SRF.NS","Chemicals"),
+        ("ATUL.NS","Chemicals"),("DEEPAKNTR.NS","Chemicals"),
+        ("NAVINFLUOR.NS","Chemicals"),("GALAXYSURF.NS","Chemicals"),
+        ("CLEAN.NS","Chemicals"),("FINEORG.NS","Chemicals"),
+        # Construction Materials / Cement
+        ("ULTRACEMCO.NS","Construction Materials"),("AMBUJACEM.NS","Construction Materials"),
+        ("SHREECEM.NS","Construction Materials"),("JKCEMENT.NS","Construction Materials"),
+        ("DALMIACELE.NS","Construction Materials"),("RAMCOCEM.NS","Construction Materials"),
+        # Real Estate
+        ("DLF.NS","Realty"),("GODREJPROP.NS","Realty"),("OBEROIRLTY.NS","Realty"),
+        ("PRESTIGE.NS","Realty"),("PHOENIXLTD.NS","Realty"),("BRIGADE.NS","Realty"),
+        # Telecommunications
+        ("BHARTIARTL.NS","Telecommunication"),("IDEA.NS","Telecommunication"),
+        ("TATACOMM.NS","Telecommunication"),
+        # Consumer Discretionary / Retail
+        ("TITAN.NS","Consumer Durables"),("TRENT.NS","Consumer Durables"),
+        ("DMART.NS","Consumer Durables"),("NYKAA.NS","Consumer Durables"),
+        ("ZOMATO.NS","Consumer Durables"),("JUBLFOOD.NS","Consumer Durables"),
+        ("DEVYANI.NS","Consumer Durables"),("WESTLIFE.NS","Consumer Durables"),
+        ("SHOPERSTOP.NS","Consumer Durables"),("INDIGOPNTS.NS","Consumer Durables"),
+        # Logistics / Transport
+        ("ADANIPORTS.NS","Services"),("IRCTC.NS","Services"),
+        ("CONCOR.NS","Services"),("BLUEDART.NS","Services"),
+        ("DELHIVERY.NS","Services"),
+        # Media
+        ("ZEEL.NS","Media Entertainment & Publication"),
+        ("SUNTV.NS","Media Entertainment & Publication"),
+    ]
+    return pd.DataFrame(data, columns=["Ticker", "Sector"])
+
+
+def get_nifty500_constituents(force_refresh: bool = False) -> pd.DataFrame:
+    """
+    Load NIFTY 500 constituents from local CSV cache.
+    Auto-refreshes from NSE if file is missing or older than 7 days.
+    Falls back to a curated static list if the NSE fetch fails.
+    """
+    file_exists = os.path.exists(NIFTY500_FILE)
+
+    if file_exists and not force_refresh:
+        age_days = (time.time() - os.path.getmtime(NIFTY500_FILE)) / 86_400
+        if age_days < SP500_MAX_AGE_DAYS:
+            return pd.read_csv(NIFTY500_FILE)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        response = requests.get(NIFTY500_URL, headers=headers, timeout=15)
+        if response.status_code == 200:
+            df = pd.read_csv(StringIO(response.text))
+            # NSE CSV columns: Company Name, Industry, Symbol, Series, ISIN Code
+            if "Symbol" in df.columns and "Industry" in df.columns:
+                result = df[["Symbol", "Industry"]].copy()
+                result.columns = ["Ticker", "Sector"]
+                result["Ticker"] = result["Ticker"].str.strip() + ".NS"
+                result["Sector"] = result["Sector"].str.strip()
+                result = result.dropna(subset=["Ticker", "Sector"])
+                result.to_csv(NIFTY500_FILE, index=False)
+                return result
+    except Exception:
+        pass
+
+    # Network fetch failed — use stale cache if available, else static fallback
+    if file_exists:
+        return pd.read_csv(NIFTY500_FILE)
+    return _nifty_static_fallback()
 
 
 # ----------------------------------------------------------
@@ -205,7 +368,8 @@ def _fetch_pe_and_roe(tickers: List[str]) -> dict:
 def _compute_momentum_scores(
     price_data: pd.DataFrame,
     tickers: List[str],
-    spy_ret_12m: float,
+    benchmark_ret_12m: float,
+    alpha_label: str = "Alpha vs SPY (12M)",
 ) -> pd.DataFrame:
     """
     Compute all momentum metrics in one fully vectorised pass.
@@ -251,7 +415,7 @@ def _compute_momentum_scores(
     df = df[~((df["ret_1m"].notna()) & (df["ret_1m"] < -0.10))].copy()
 
     # ── Alpha vs benchmark ────────────────────────────────
-    df["alpha_12m"] = df["ret_12m"] - spy_ret_12m
+    df["alpha_12m"] = df["ret_12m"] - benchmark_ret_12m
 
     # ── Composite score (vectorised) ──────────────────────
     r12 = df["ret_12m"].fillna(0)
@@ -274,14 +438,14 @@ def _compute_momentum_scores(
     df = df.rename(columns={
         "ret_6m":   "6M Return",
         "ret_12m":  "12M Return",
-        "alpha_12m":"Alpha vs SPY (12M)",
+        "alpha_12m": alpha_label,
         "vol_1y":   "1Y Volatility",
         "trend_ok": "Above 200DMA",
     })
 
     return df[[
         "Ticker", "Current Price",
-        "6M Return", "12M Return", "Alpha vs SPY (12M)",
+        "6M Return", "12M Return", alpha_label,
         "1Y Volatility", "Above 200DMA", "Score",
     ]]
 
@@ -292,10 +456,11 @@ def _compute_momentum_scores(
 
 def generate_enhancement_recommendations(
     top_n: int = TOP_N,
-    price_data: Optional[pd.DataFrame] = None,   # FIX 4: accept pre-fetched data
+    price_data: Optional[pd.DataFrame] = None,
+    market: str = "US",
 ) -> pd.DataFrame:
     """
-    Screen S&P 500 for top momentum + alpha opportunities.
+    Screen S&P 500 (US) or NIFTY 500 (IN) for top momentum + alpha opportunities.
 
     Parameters
     ----------
@@ -303,20 +468,31 @@ def generate_enhancement_recommendations(
         Number of final recommendations to return.
     price_data : pd.DataFrame, optional
         Pre-fetched price DataFrame. If None, data is downloaded here.
-        Pass this in from an external caller to avoid duplicate downloads.
+    market : str
+        "US" for S&P 500 screening, "IN" for NIFTY 500 screening.
     """
 
     # ── 1. Load constituents ──────────────────────────────
-    try:
-        sp500 = get_sp500_constituents()
-    except Exception as e:
-        raise Exception(f"S&P 500 loading failed: {e}")
+    if market == "IN":
+        benchmark    = IN_BENCHMARK
+        alpha_label  = "Alpha vs NIFTY (12M)"
+        try:
+            constituents = get_nifty500_constituents()
+        except Exception as e:
+            raise Exception(f"NIFTY 500 loading failed: {e}")
+    else:
+        benchmark    = BENCHMARK
+        alpha_label  = "Alpha vs SPY (12M)"
+        try:
+            constituents = get_sp500_constituents()
+        except Exception as e:
+            raise Exception(f"S&P 500 loading failed: {e}")
 
-    tickers: List[str] = sp500["Ticker"].tolist()
+    tickers: List[str] = constituents["Ticker"].tolist()
 
     # ── 2. Price download (shared or fresh) ───────────────
     if price_data is None:
-        price_data = _download_prices(tickers + [BENCHMARK], LOOKBACK)
+        price_data = _download_prices(tickers + [benchmark], LOOKBACK)
 
     if price_data is None or price_data.empty:
         return pd.DataFrame()
@@ -324,20 +500,19 @@ def generate_enhancement_recommendations(
     if isinstance(price_data.columns, pd.MultiIndex):
         price_data = price_data["Close"]
 
-    if BENCHMARK not in price_data.columns:
-        raise Exception("Benchmark (SPY) missing from price data.")
+    if benchmark not in price_data.columns:
+        raise Exception(f"Benchmark ({benchmark}) missing from price data.")
 
-    spy_prices  = price_data[BENCHMARK].dropna()
-    spy_ret_12m = _period_return(spy_prices, 252)
+    bm_prices    = price_data[benchmark].dropna()
+    bm_ret_12m   = _period_return(bm_prices, 252)
 
-    # ── 3. Vectorised momentum scoring ───────────────────── FIX 2
-    df = _compute_momentum_scores(price_data, tickers, spy_ret_12m)
+    # ── 3. Vectorised momentum scoring ────────────────────
+    df = _compute_momentum_scores(price_data, tickers, bm_ret_12m, alpha_label)
 
     if df.empty:
         return pd.DataFrame()
 
     # ── 4. Pre-filter to top 3× before fetching PE ────────
-    #    Limits PE API calls to ~45 tickers instead of 500
     pre_n = min(top_n * 3, len(df))
     df    = df.nlargest(pre_n, "Score").reset_index(drop=True)
 
@@ -434,10 +609,11 @@ def generate_sector_wise_recommendations(
     top_sectors: int = 5,
     stocks_per_sector: int = 5,
     price_data: Optional[pd.DataFrame] = None,
+    market: str = "US",
 ) -> dict:
     """
-    Screen S&P 500 for top performing sectors and their best stocks.
-    
+    Screen S&P 500 (US) or NIFTY 500 (IN) for top performing sectors and their best stocks.
+
     Parameters
     ----------
     top_sectors : int
@@ -446,7 +622,9 @@ def generate_sector_wise_recommendations(
         Number of top stocks per sector to return.
     price_data : pd.DataFrame, optional
         Pre-fetched price DataFrame. If None, data is downloaded here.
-    
+    market : str
+        "US" for S&P 500 screening, "IN" for NIFTY 500 screening.
+
     Returns
     -------
     dict
@@ -454,17 +632,27 @@ def generate_sector_wise_recommendations(
     """
 
     # ── 1. Load constituents with sector info ─────────────
-    try:
-        sp500 = get_sp500_constituents()
-    except Exception as e:
-        raise Exception(f"S&P 500 loading failed: {e}")
+    if market == "IN":
+        benchmark   = IN_BENCHMARK
+        alpha_label = "Alpha vs NIFTY (12M)"
+        try:
+            constituents = get_nifty500_constituents()
+        except Exception as e:
+            raise Exception(f"NIFTY 500 loading failed: {e}")
+    else:
+        benchmark   = BENCHMARK
+        alpha_label = "Alpha vs SPY (12M)"
+        try:
+            constituents = get_sp500_constituents()
+        except Exception as e:
+            raise Exception(f"S&P 500 loading failed: {e}")
 
-    tickers: List[str] = sp500["Ticker"].tolist()
-    sectors_map = dict(zip(sp500["Ticker"], sp500["Sector"]))
+    tickers: List[str] = constituents["Ticker"].tolist()
+    sectors_map = dict(zip(constituents["Ticker"], constituents["Sector"]))
 
     # ── 2. Price download (shared or fresh) ───────────────
     if price_data is None:
-        price_data = _download_prices(tickers + [BENCHMARK], LOOKBACK)
+        price_data = _download_prices(tickers + [benchmark], LOOKBACK)
 
     if price_data is None or price_data.empty:
         return {}
@@ -472,14 +660,14 @@ def generate_sector_wise_recommendations(
     if isinstance(price_data.columns, pd.MultiIndex):
         price_data = price_data["Close"]
 
-    if BENCHMARK not in price_data.columns:
-        raise Exception("Benchmark (SPY) missing from price data.")
+    if benchmark not in price_data.columns:
+        raise Exception(f"Benchmark ({benchmark}) missing from price data.")
 
-    spy_prices  = price_data[BENCHMARK].dropna()
-    spy_ret_12m = _period_return(spy_prices, 252)
+    bm_prices   = price_data[benchmark].dropna()
+    bm_ret_12m  = _period_return(bm_prices, 252)
 
     # ── 3. Compute momentum scores for all tickers ────────
-    df = _compute_momentum_scores(price_data, tickers, spy_ret_12m)
+    df = _compute_momentum_scores(price_data, tickers, bm_ret_12m, alpha_label)
 
     if df.empty:
         return {}
