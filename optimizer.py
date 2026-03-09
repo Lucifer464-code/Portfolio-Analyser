@@ -137,67 +137,6 @@ def _equal_weight(returns, risk_profile, max_weight, **_) -> pd.Series:
     return pd.Series(np.full(n, 1.0 / n), index=returns.columns)
 
 
-def _black_litterman(returns, risk_profile, max_weight, views: Optional[dict] = None, **_) -> pd.Series:
-    """
-    Black-Litterman with market-cap-proxy equilibrium returns.
-
-    Equilibrium weights are approximated by the inverse-variance portfolio
-    (a standard proxy when live market-cap data isn't available).
-    Views are injected as {ticker: expected_annual_return}.
-    View uncertainty (omega) is set proportional to asset variance via tau.
-
-    Parameters
-    ----------
-    views : dict, optional
-        {ticker: expected_annual_return}, e.g. {"AAPL": 0.15}.
-        If None the model reverts to pure equilibrium (≈ Min-Variance).
-    """
-    n, bounds, constraints, x0, cov, mu, rf_mult = _base_setup(returns, risk_profile, max_weight)
-
-    # ── Step 1: Market-equilibrium proxy (inverse-variance) ──────────────
-    inv_var = 1.0 / np.diag(cov)
-    mkt_w   = inv_var / inv_var.sum()
-
-    mkt_vol  = _port_vol(mkt_w, cov)
-    mkt_ret  = float(np.dot(mu, mkt_w))
-    # Risk-aversion δ: implied from the market portfolio's Sharpe-like ratio
-    delta    = (mkt_ret - BASE_RISK_FREE_RATE * rf_mult) / (mkt_vol ** 2) if mkt_vol else 2.5
-
-    # ── Step 2: Implied equilibrium excess returns (Π = δ · Σ · w_mkt) ──
-    pi = delta * cov @ mkt_w
-
-    # ── Step 3: Blend with investor views ────────────────────────────────
-    if views:
-        tickers = list(returns.columns)
-        k       = len(views)
-        P       = np.zeros((k, n))   # pick matrix  (k × n)
-        q       = np.zeros(k)        # view excess returns
-
-        for i, (ticker, view_ret) in enumerate(views.items()):
-            if ticker in tickers:
-                j        = tickers.index(ticker)
-                P[i, j]  = 1.0
-                q[i]     = view_ret - BASE_RISK_FREE_RATE * rf_mult
-
-        tau       = 0.05                                        # scalar uncertainty on prior
-        tau_cov   = tau * cov
-        omega     = np.diag(np.diag(P @ tau_cov @ P.T))        # diagonal view uncertainty
-
-        # Posterior: M⁻¹ = (τΣ)⁻¹ + P'Ω⁻¹P
-        M         = np.linalg.inv(np.linalg.inv(tau_cov) + P.T @ np.linalg.inv(omega) @ P)
-        bl_mu     = M @ (np.linalg.inv(tau_cov) @ pi + P.T @ np.linalg.inv(omega) @ q)
-    else:
-        bl_mu = pi   # pure equilibrium — no views
-
-    # ── Step 4: MVO on BL posterior expected returns ─────────────────────
-    def objective(w):
-        ret    = float(np.dot(bl_mu, w))
-        vol    = _port_vol(w, cov)
-        sharpe = ret / vol if vol else 0    # bl_mu is already excess
-        return -(sharpe - REGULARIZATION_STRENGTH * np.sum(w ** 2))
-
-    return pd.Series(_minimize(objective, x0, bounds, constraints), index=returns.columns)
-
 
 # ==========================================================
 # OPTIMIZER REGISTRY
@@ -209,7 +148,6 @@ OPTIMIZERS: dict = {
     "Risk Parity":         _risk_parity,
     "Max Diversification": _max_diversification,
     "Equal Weight":        _equal_weight,
-    "Black-Litterman":     _black_litterman,
 }
 
 OPTIMIZER_DESCRIPTIONS: dict = {
@@ -223,8 +161,6 @@ OPTIMIZER_DESCRIPTIONS: dict = {
         "Maximises the ratio of weighted-average asset vol to portfolio vol. Reduces concentration.",
     "Equal Weight":
         "Simple 1/N baseline. No assumptions required — a strong benchmark to beat.",
-    "Black-Litterman":
-        "Blends market-equilibrium returns with your views. Reduces estimation error vs raw MVO.",
 }
 
 
@@ -233,7 +169,6 @@ def optimize_portfolio(
     risk_profile: str,
     method: str = "Max Sharpe",
     max_weight: Optional[float] = None,
-    views: Optional[dict] = None,
 ) -> pd.Series:
     """
     Unified entry point for all optimization methods.
@@ -244,13 +179,11 @@ def optimize_portfolio(
     risk_profile : Key into RISK_PROFILES config dict.
     method       : One of OPTIMIZERS keys. Defaults to "Max Sharpe".
     max_weight   : Hard upper bound on any single asset weight (0–1).
-    views        : Black-Litterman views {ticker: expected_annual_return}.
-                   Ignored for all other methods.
     """
     if method not in OPTIMIZERS:
         raise ValueError(f"Unknown method '{method}'. Choose from: {list(OPTIMIZERS.keys())}")
 
-    return OPTIMIZERS[method](returns, risk_profile, max_weight, views=views)
+    return OPTIMIZERS[method](returns, risk_profile, max_weight)
 
 
 # ==========================================================
