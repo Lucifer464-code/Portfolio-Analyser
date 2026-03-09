@@ -390,21 +390,25 @@ def india_macro_snapshot(fred_api_key: str = "") -> dict:
 def yfinance_news(ticker: str, max_items: int = 12) -> pd.DataFrame:
     """
     Fetch recent news for a ticker via yfinance.
-    Fallback for stocks not covered by Finnhub (e.g. Indian exchanges).
+    Handles the current nested content structure (yfinance >= 0.2.x).
     """
     import yfinance as yf
     try:
         news = yf.Ticker(ticker).news or []
         rows = []
         for item in news[:max_items]:
+            # New API: data lives under item['content']
+            c = item.get("content") or item
+            url = (c.get("canonicalUrl") or c.get("clickThroughUrl") or {}).get("url", "")
             rows.append({
-                "headline": item.get("title", ""),
-                "source":   item.get("publisher", ""),
-                "url":      item.get("link", ""),
-                "datetime": pd.to_datetime(item.get("providerPublishTime", 0), unit="s", utc=True),
-                "summary":  item.get("summary", ""),
+                "headline": c.get("title", ""),
+                "source":   (c.get("provider") or {}).get("displayName", ""),
+                "url":      url,
+                "datetime": pd.to_datetime(c.get("pubDate") or c.get("displayTime"), utc=True, errors="coerce"),
+                "summary":  c.get("summary", ""),
             })
         df = pd.DataFrame(rows)
+        df = df[df["headline"] != ""]
         if not df.empty:
             df = df.sort_values("datetime", ascending=False)
         return df
