@@ -42,7 +42,7 @@ from asset_analytics_engine import (
 )
 from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics
 from external_apis import (
-    finnhub_earnings_surprises, finnhub_price_target, finnhub_recommendations,
+    finnhub_earnings_surprises, finnhub_recommendations,
     finnhub_insider_sentiment, finnhub_portfolio_consensus,
     finnhub_stock_metrics, finnhub_company_profile, finnhub_peers, finnhub_company_news,
     fred_macro_snapshot, india_macro_snapshot, yfinance_news,
@@ -1063,8 +1063,6 @@ def cached_yf_news(ticker):                  return yfinance_news(ticker)
 @st.cache_data(ttl=3600,  show_spinner=False)
 def cached_finnhub_earnings(ticker, key):    return finnhub_earnings_surprises(ticker, key)
 @st.cache_data(ttl=3600,  show_spinner=False)
-def cached_finnhub_target(ticker, key):      return finnhub_price_target(ticker, key)
-@st.cache_data(ttl=3600,  show_spinner=False)
 def cached_finnhub_recs(ticker, key):        return finnhub_recommendations(ticker, key)
 @st.cache_data(ttl=86400, show_spinner=False)
 def cached_finnhub_insider(ticker, key):     return finnhub_insider_sentiment(ticker, key)
@@ -1172,9 +1170,12 @@ with st.sidebar:
 px.defaults.template = "portfolio_dark"
 
 # ── API keys from .streamlit/secrets.toml ──────────────────
-_FINNHUB_KEY = st.secrets.get("FINNHUB_KEY", "")
-_FRED_KEY    = st.secrets.get("FRED_KEY",    "")
-_FMP_KEY     = st.secrets.get("FMP_KEY",     "")
+try:
+    _FINNHUB_KEY = st.secrets.get("FINNHUB_KEY", "") or "d6ljirpr01qrq6i31170d6ljirpr01qrq6i3117g"
+    _FRED_KEY    = st.secrets.get("FRED_KEY",    "") or "1887e2a54d8ecf8a37c4df1799d4b3bb"
+except Exception:
+    _FINNHUB_KEY = "d6ljirpr01qrq6i31170d6ljirpr01qrq6i3117g"
+    _FRED_KEY    = "1887e2a54d8ecf8a37c4df1799d4b3bb"
 
 threshold        = threshold_pct        / 100
 max_weight       = max_weight_pct       / 100
@@ -2366,20 +2367,9 @@ with tab5:
     # ── Analyst Consensus ─────────────────────────────────────
     section_header("Analyst Consensus", color="var(--accent)")
     if _is_indian:
-        st.info("Analyst price targets and ratings are not available for NSE/BSE-listed stocks on the free data tier.")
+        st.info("Analyst ratings are not available for NSE/BSE-listed stocks on the free data tier.")
     else:
-        _fh_target = cached_finnhub_target(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {}
-        _fh_recs   = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)   if _FINNHUB_KEY else pd.DataFrame()
-        if _fh_target:
-            _cur_px = df[df["Ticker"] == selected_asset]["Current Price"].values
-            _cur_px = float(_cur_px[0]) if len(_cur_px) > 0 and pd.notna(_cur_px[0]) else None
-            _pt1, _pt2, _pt3, _pt4 = st.columns(4)
-            _mean = _fh_target.get("mean")
-            _upside = f"{(_mean - _cur_px) / _cur_px:.1%} upside" if (_mean and _cur_px) else None
-            _pt1.metric("Target Mean",   f"{_currency}{_mean:.2f}"                      if _mean                    else "—", delta=_upside)
-            _pt2.metric("Target High",   f"{_currency}{_fh_target['high']:.2f}"         if _fh_target.get('high')   else "—")
-            _pt3.metric("Target Low",    f"{_currency}{_fh_target['low']:.2f}"          if _fh_target.get('low')    else "—")
-            _pt4.metric("Target Median", f"{_currency}{_fh_target['median']:.2f}"       if _fh_target.get('median') else "—")
+        _fh_recs = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)
         if not _fh_recs.empty:
             _rec_fig = go.Figure([
                 go.Bar(name="Strong Buy",  x=_fh_recs["Period"], y=_fh_recs["Strong Buy"],  marker_color="#15803d"),
@@ -2392,7 +2382,7 @@ with tab5:
                                    margin=dict(l=0,r=0,t=0,b=0),
                                    legend=dict(orientation="h", y=1.02, x=0))
             st.plotly_chart(_rec_fig, use_container_width=True)
-        elif not _fh_target:
+        else:
             empty_state("📊", "Analyst ratings unavailable",
                         f"No analyst coverage found for {selected_asset}")
 
