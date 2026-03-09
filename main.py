@@ -2083,7 +2083,7 @@ with tab3:
                         bgcolor="rgba(11,17,32,0.92)",
                         bordercolor="#3b82f6", borderwidth=1,
                         font=dict(color="#e2e8f0", size=12)))
-        st.plotly_chart(fig_f, use_container_width=True)
+        st.plotly_chart(fig_f, use_container_width=True, key="efficient_frontier")
 
     else:
         empty_state("🎯","Optimization unavailable","Could not compute optimal weights for this portfolio")
@@ -2266,7 +2266,11 @@ with tab5:
             _mktcap_raw = (_mktcap * 1e6)   # back to INR
             _mktcap_str = f"₹{_mktcap_raw/1e7:.0f}Cr" if _mktcap_raw >= 1e7 else f"₹{_mktcap_raw/1e5:.1f}L"
         else:
-            _mktcap_str = (f"${_mktcap/1000:.2f}T" if _mktcap >= 1000 else f"${_mktcap:.1f}B") if _mktcap else "—"
+            _mktcap_str = (
+                f"${_mktcap/1_000_000:.2f}T" if _mktcap >= 1_000_000
+                else f"${_mktcap/1_000:.2f}B" if _mktcap >= 1_000
+                else f"${_mktcap:.0f}M"
+            ) if _mktcap else "—"
         _web = _profile.get("weburl", "")
         _web_html = (f'<a href="{_web}" target="_blank" style="color:var(--accent);'
                      f'font-size:10px;text-decoration:none;">{_web.replace("https://","").rstrip("/")}'
