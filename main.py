@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import yfinance as yf
-from concurrent.futures import ThreadPoolExecutor
+
 from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -20,7 +20,7 @@ from io import BytesIO
 
 from config import RISK_PROFILES, TRADING_DAYS, DEFAULT_TRANSACTION_COST
 from data_engine import (
-    load_and_validate_csv, fetch_market_data, compute_returns,
+    load_and_validate_csv, compute_returns,
     aggregate_holdings, compute_xirr, compute_pl_summary,
 )
 from risk_engine import (generate_risk_summary, rolling_volatility, rolling_correlation,
@@ -28,7 +28,7 @@ from risk_engine import (generate_risk_summary, rolling_volatility, rolling_corr
     asset_type_concentration, effective_n)
 from optimizer import (
     optimize_portfolio, simulate_efficient_frontier, portfolio_performance,
-    risk_contribution, OPTIMIZERS,
+    OPTIMIZERS,
 )
 from analytics import portfolio_health_score
 from enhancement_engine import (
@@ -462,7 +462,7 @@ def style_pl(df, pl_cols):
             n = float(str(val).replace("%","").replace("$","").replace("₹","").replace(",",""))
             return ("color:#22c55e" if n>0 else "color:#ef4444") + ";font-weight:600"
         except (ValueError, TypeError): return ""
-    return df.style.applymap(_colour, subset=pl_cols)
+    return df.style.map(_colour, subset=pl_cols)
 
 
 def slice_tf(data, tf):
@@ -1541,13 +1541,16 @@ with tab1:
         section_header("Performance History")
         _cum_full = (1 + portfolio_returns.dropna()).cumprod()
         _cum      = slice_tf(_cum_full, _ov_tf)
+        if _cum.empty:
+            _cum = _cum_full
         _cum      = _cum / _cum.iloc[0] - 1
         _perf_df  = pd.DataFrame({"Portfolio": _cum})
         if benchmark_returns is not None:
             _bc_full = (1 + benchmark_returns.dropna()).cumprod()
             _bc      = slice_tf(_bc_full, _ov_tf).reindex(_cum.index, method="ffill")
-            _bc      = _bc / _bc.iloc[0] - 1
-            _perf_df["Benchmark"] = _bc
+            if not _bc.empty:
+                _bc = _bc / _bc.iloc[0] - 1
+                _perf_df["Benchmark"] = _bc
         _fig_perf = px.line(_perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
         _fig_perf.update_traces(line=dict(width=1.8))
         quick_chart(_fig_perf, 260)
@@ -1987,7 +1990,7 @@ with tab3:
                 "Optimized Weight": "{:.2%}",
                 "Change":           "{:+.2%}",
             })
-            .applymap(_style_action, subset=["Action"]),
+            .map(_style_action, subset=["Action"]),
             use_container_width=True,
         )
 
@@ -2132,6 +2135,8 @@ with tab4:
     # rebase = series / series.iloc[0] - 1  (correct ratio rebase, not subtraction)
     cum_full = (1 + portfolio_returns.dropna()).cumprod()
     cum      = slice_tf(cum_full, tf)
+    if cum.empty:
+        cum = cum_full
     cum      = cum / cum.iloc[0] - 1          # rebase: 0% at window start
 
     perf_df = pd.DataFrame({"Portfolio": cum})
@@ -2141,8 +2146,9 @@ with tab4:
         bc      = slice_tf(bc_full, tf)
         # Align benchmark to same start date as portfolio
         bc      = bc.reindex(cum.index, method="ffill")
-        bc      = bc / bc.iloc[0] - 1
-        perf_df["Benchmark"] = bc
+        if not bc.empty:
+            bc = bc / bc.iloc[0] - 1
+            perf_df["Benchmark"] = bc
 
     fig = px.line(perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
     fig.update_traces(line=dict(width=2))
@@ -2402,7 +2408,7 @@ with tab5:
                 if val == "Miss":    return "color:#ef4444;font-weight:600"
                 return "color:#f59e0b;font-weight:600"
             st.dataframe(
-                _fh_earn.style.applymap(_style_result, subset=["Result"]),
+                _fh_earn.style.map(_style_result, subset=["Result"]),
                 use_container_width=True)
         else:
             empty_state("📊", "Earnings data unavailable",
@@ -2503,7 +2509,7 @@ with tab6:
                 "Strong Sell": "color:#7f1d1d;font-weight:700",
             }.get(val, "")
         st.dataframe(
-            _cons_df.style.applymap(_style_cons, subset=["Consensus"]),
+            _cons_df.style.map(_style_cons, subset=["Consensus"]),
             use_container_width=True)
     elif _market != "IN":
         empty_state("📊", "Analyst consensus unavailable",
