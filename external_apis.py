@@ -297,22 +297,22 @@ def india_macro_snapshot(fred_api_key: str = "") -> dict:
 
     result = {}
 
-    # ── India 10Y Govt Bond Yield ────────────────────────
-    try:
-        _bond = yf.Ticker("IN10Y=X")
-        _hi   = _bond.history(period="5d")
-        if not _hi.empty:
-            _val  = float(_hi["Close"].dropna().iloc[-1])
-            _prev = float(_hi["Close"].dropna().iloc[-2]) if len(_hi) > 1 else None
-            result["India 10Y Yield"] = {
-                "value":   _val,
-                "display": f"{_val:.2f}%",
-                "date":    str(_hi.index[-1].date()),
-                "delta":   round(_val - _prev, 3) if _prev is not None else None,
-                "unit":    "%",
-            }
-    except Exception:
-        pass
+    # ── India 10Y Govt Bond Yield (via FRED INDIRLTLT01STM) ──
+    if fred_api_key:
+        try:
+            obs = _fred_obs("INDIRLTLT01STM", fred_api_key, limit=3)
+            if obs:
+                _val  = obs[0]["value"]
+                _prev = obs[1]["value"] if len(obs) > 1 else None
+                result["India 10Y Yield"] = {
+                    "value":   _val,
+                    "display": f"{_val:.2f}%",
+                    "date":    obs[0]["date"],
+                    "delta":   round(_val - _prev, 3) if _prev is not None else None,
+                    "unit":    "%",
+                }
+        except Exception:
+            pass
 
     # ── India VIX ────────────────────────────────────────
     try:
