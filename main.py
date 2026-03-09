@@ -28,7 +28,7 @@ from risk_engine import (generate_risk_summary, rolling_volatility, rolling_corr
     asset_type_concentration, effective_n)
 from optimizer import (
     optimize_portfolio, simulate_efficient_frontier, portfolio_performance,
-    risk_contribution, OPTIMIZERS, OPTIMIZER_DESCRIPTIONS,
+    risk_contribution, OPTIMIZERS,
 )
 from analytics import portfolio_health_score
 from enhancement_engine import (
@@ -1532,10 +1532,31 @@ with tab1:
               delta=f"{unreal_pct:.2%}" if unreal_pct is not None else None)
     cD.metric("Realised P/L",     f"{_currency}{realised_gain:,.0f}")
 
-    section_header("Drawdown Trend")
-    fig_dd = px.area(drawdown_series.tail(120), color_discrete_sequence=["#ef4444"])
-    fig_dd.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.12)")
-    quick_chart(fig_dd, 220)
+    _ov_tf = st.radio("Timeframe", ["1M","3M","6M","1Y","3Y","5Y"], horizontal=True,
+                      index=3, key="overview_tf", label_visibility="collapsed")
+
+    _ov_c1, _ov_c2 = st.columns(2)
+    with _ov_c1:
+        section_header("Performance History")
+        _cum_full = (1 + portfolio_returns.dropna()).cumprod()
+        _cum      = slice_tf(_cum_full, _ov_tf)
+        _cum      = _cum / _cum.iloc[0] - 1
+        _perf_df  = pd.DataFrame({"Portfolio": _cum})
+        if benchmark_returns is not None:
+            _bc_full = (1 + benchmark_returns.dropna()).cumprod()
+            _bc      = slice_tf(_bc_full, _ov_tf).reindex(_cum.index, method="ffill")
+            _bc      = _bc / _bc.iloc[0] - 1
+            _perf_df["Benchmark"] = _bc
+        _fig_perf = px.line(_perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
+        _fig_perf.update_traces(line=dict(width=1.8))
+        quick_chart(_fig_perf, 260)
+
+    with _ov_c2:
+        section_header("Drawdown")
+        _dd_sliced = slice_tf(drawdown_series, _ov_tf)
+        fig_dd = px.area(_dd_sliced, color_discrete_sequence=["#ef4444"])
+        fig_dd.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.12)")
+        quick_chart(fig_dd, 260)
 
     section_header("Allocation")
     cX, cY = st.columns(2)
