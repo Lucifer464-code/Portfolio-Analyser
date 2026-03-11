@@ -313,7 +313,7 @@ def fetch_market_data(tickers: List[str], period: str) -> pd.DataFrame:
 
 
 def compute_returns(price_data: pd.DataFrame) -> pd.DataFrame:
-    return price_data.pct_change().dropna()
+    return price_data.ffill().pct_change().dropna(how='all').fillna(0.0)
 
 
 # ==========================================================
