@@ -1005,11 +1005,11 @@ def fetch_ticker_metadata(tickers):
         # Method 2: static sector maps (instant, no network)
         if t in _IN_SECTOR_MAP:
             _sec = _IN_SECTOR_MAP[t]
-            _atype = "ETF" if _sec == "ETF" else "Equity"
+            _atype = "ETF" if _sec == "ETF" else "Stock"
             return t, t, _sec, _atype
         if t in _US_SECTOR_MAP:
             _sec = _US_SECTOR_MAP[t]
-            _atype = "ETF" if _sec == "ETF" else "Equity"
+            _atype = "ETF" if _sec == "ETF" else "Stock"
             return t, t, _sec, _atype
 
         # Method 3: yf.Ticker().fast_info for name + type only
@@ -1020,8 +1020,8 @@ def fetch_ticker_metadata(tickers):
             if t.startswith("^"):
                 return t, name, "Index", "Index"
             if t.endswith(".NS") or t.endswith(".BO"):
-                return t, name, "Unknown", "Equity"
-            return t, name, "Unknown", "Equity"
+                return t, name, "Unknown", "Stock"
+            return t, name, "Unknown", "Stock"
         except Exception:
             pass
 
@@ -1029,8 +1029,8 @@ def fetch_ticker_metadata(tickers):
         if t.startswith("^"):
             return t, t, "Index", "Index"
         if t.endswith(".NS") or t.endswith(".BO"):
-            return t, t, "Unknown", "Equity"
-        return t, t, "Unknown", "Equity"
+            return t, t, "Unknown", "Stock"
+        return t, t, "Unknown", "Stock"
 
     # Sequential fetch with small delay between tickers to avoid rate limiting
     rows = []
