@@ -1014,11 +1014,16 @@ def fetch_ticker_metadata(tickers):
 
         # Method 3: yf.Ticker().fast_info for name + type only
         try:
-            fi    = yf.Ticker(t).fast_info
-            name  = getattr(fi, "display_name", None) or t
-            # Infer type from ticker pattern
+            fi       = yf.Ticker(t).fast_info
+            name     = getattr(fi, "display_name", None) or t
+            qt       = (getattr(fi, "quote_type", None) or "").upper()
+            atype    = _QUOTE_TYPE_MAP.get(qt, None)
             if t.startswith("^"):
                 return t, name, "Index", "Index"
+            if atype == "ETF":
+                return t, name, "ETF", "ETF"
+            if atype:
+                return t, name, "Unknown", atype
             if t.endswith(".NS") or t.endswith(".BO"):
                 return t, name, "Unknown", "Stock"
             return t, name, "Unknown", "Stock"
