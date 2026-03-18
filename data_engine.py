@@ -8,11 +8,13 @@ from typing import Tuple, Dict, List
 # EXPECTED COLUMNS
 # ==========================================================
 
-TRANSACTION_COLUMNS = {"Ticker", "Date", "Action", "Quantity", "Price"}
+TRANSACTION_COLUMNS = {"Ticker", "Date", "Action", "Quantity"}
 
 # ==========================================================
 # CSV LOADING & VALIDATION — TRANSACTION FORMAT
-# Expects: Ticker, Date, Action (Buy/Sell), Quantity, Price
+# Expects: Ticker, Date, Action (Buy/Sell), Quantity
+# Price is fetched automatically from Yahoo Finance
+# using the closing price on each transaction date.
 # ==========================================================
 
 def load_and_validate_csv(uploaded_file) -> Tuple[pd.DataFrame, Dict]:
@@ -57,8 +59,6 @@ def load_and_validate_csv(uploaded_file) -> Tuple[pd.DataFrame, Dict]:
                    "ordertype", "txntype", "txtype", "direction"]
     quantity_kw = ["quantity", "qty", "units", "shares", "amount", "noofshares",
                    "numberofshares", "vol", "volume", "lot"]
-    price_kw    = ["price", "rate", "cost", "avgcost", "averagecost", "buyprice", "sellprice",
-                   "tradeprice", "transactionprice", "purchaseprice", "avgprice", "averageprice"]
 
     col_map = {}
     for keywords, key, label in [
@@ -66,7 +66,6 @@ def load_and_validate_csv(uploaded_file) -> Tuple[pd.DataFrame, Dict]:
         (date_kw,     "Date",     "Date"),
         (action_kw,   "Action",   "Action (Buy/Sell)"),
         (quantity_kw, "Quantity", "Quantity"),
-        (price_kw,    "Price",    "Price"),
     ]:
         match = _find_col(keywords)
         if match:
@@ -124,26 +123,102 @@ def load_and_validate_csv(uploaded_file) -> Tuple[pd.DataFrame, Dict]:
     df = df.dropna(subset=["Quantity"])
     df = df[df["Quantity"] > 0]
 
-    # ── Clean Price ────────────────────────────────────────
-    df["Price"] = (
-        df["Price"].astype(str)
-        .str.replace(",", "", regex=False)
-        .str.replace("₹", "", regex=False)
-        .str.replace("$", "", regex=False)
-        .str.strip()
-    )
-    df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
-    df = df.dropna(subset=["Price"])
-    df = df[df["Price"] > 0]
-
     if df.empty:
         diagnostics["error"] = "No valid rows after cleaning."
         return None, diagnostics
 
     df = df.sort_values("Date").reset_index(drop=True)
+
+    # ── Fetch historical prices from Yahoo Finance ─────────
+    df, price_diagnostics = fetch_historical_prices(df)
+    diagnostics.update(price_diagnostics)
+
+    if df.empty:
+        diagnostics["error"] = "No valid rows after price fetch."
+        return None, diagnostics
+
     diagnostics["rows_loaded"] = len(df)
 
     return df, diagnostics
+
+
+# ==========================================================
+# HISTORICAL PRICE FETCH — per transaction date
+# Fetches closing price for each (ticker, date) pair.
+# Falls back to the previous trading day's close if the
+# exact date is a holiday or weekend (ffill).
+# Rows where price cannot be resolved are dropped with a
+# warning added to diagnostics.
+# ==========================================================
+
+def fetch_historical_prices(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+    diagnostics: Dict = {}
+    tickers = df["Ticker"].unique().tolist()
+
+    # Determine the date range needed (+1 day buffer for ffill)
+    min_date = df["Date"].min()
+    max_date = df["Date"].max()
+
+    # Download all tickers in one batch call
+    raw = yf.download(
+        tickers,
+        start=min_date.strftime("%Y-%m-%d"),
+        end=(max_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+        auto_adjust=True,
+        progress=False,
+    )
+
+    if raw.empty:
+        diagnostics["price_fetch_error"] = "Yahoo Finance returned no data for the transaction date range."
+        return pd.DataFrame(), diagnostics
+
+    # Extract Close prices; normalise to a DataFrame with ticker columns
+    if isinstance(raw.columns, pd.MultiIndex):
+        close = raw["Close"]
+    else:
+        close = raw  # single ticker case
+
+    # Ensure column names are uppercase to match Ticker column
+    close.columns = [c.upper() if isinstance(c, str) else c for c in close.columns]
+    close.index   = pd.to_datetime(close.index)
+
+    # Forward-fill up to 5 trading days to handle holidays / weekends
+    close = close.ffill(limit=5)
+
+    prices_out = []
+    failed_rows = 0
+
+    for idx, row in df.iterrows():
+        ticker = row["Ticker"]
+        txn_date = pd.Timestamp(row["Date"]).normalize()
+
+        if ticker not in close.columns:
+            failed_rows += 1
+            prices_out.append(None)
+            continue
+
+        # Find the most recent available price on or before txn_date
+        available = close[ticker].dropna()
+        available = available[available.index <= txn_date]
+
+        if available.empty:
+            failed_rows += 1
+            prices_out.append(None)
+        else:
+            prices_out.append(float(available.iloc[-1]))
+
+    df = df.copy()
+    df["Price"] = prices_out
+    df = df.dropna(subset=["Price"])
+    df = df[df["Price"] > 0]
+
+    if failed_rows > 0:
+        diagnostics["warning_price_fetch"] = (
+            f"{failed_rows} transaction(s) dropped — could not resolve a closing price "
+            f"from Yahoo Finance for the given ticker/date combination."
+        )
+
+    return df.reset_index(drop=True), diagnostics
 
 
 # ==========================================================

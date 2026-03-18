@@ -1005,28 +1005,23 @@ def fetch_ticker_metadata(tickers):
         # Method 2: static sector maps (instant, no network)
         if t in _IN_SECTOR_MAP:
             _sec = _IN_SECTOR_MAP[t]
-            _atype = "ETF" if _sec == "ETF" else "Stock"
+            _atype = "ETF" if _sec == "ETF" else "Equity"
             return t, t, _sec, _atype
         if t in _US_SECTOR_MAP:
             _sec = _US_SECTOR_MAP[t]
-            _atype = "ETF" if _sec == "ETF" else "Stock"
+            _atype = "ETF" if _sec == "ETF" else "Equity"
             return t, t, _sec, _atype
 
         # Method 3: yf.Ticker().fast_info for name + type only
         try:
-            fi       = yf.Ticker(t).fast_info
-            name     = getattr(fi, "display_name", None) or t
-            qt       = (getattr(fi, "quote_type", None) or "").upper()
-            atype    = _QUOTE_TYPE_MAP.get(qt, None)
+            fi    = yf.Ticker(t).fast_info
+            name  = getattr(fi, "display_name", None) or t
+            # Infer type from ticker pattern
             if t.startswith("^"):
                 return t, name, "Index", "Index"
-            if atype == "ETF":
-                return t, name, "ETF", "ETF"
-            if atype:
-                return t, name, "Unknown", atype
             if t.endswith(".NS") or t.endswith(".BO"):
-                return t, name, "Unknown", "Stock"
-            return t, name, "Unknown", "Stock"
+                return t, name, "Unknown", "Equity"
+            return t, name, "Unknown", "Equity"
         except Exception:
             pass
 
@@ -1034,8 +1029,8 @@ def fetch_ticker_metadata(tickers):
         if t.startswith("^"):
             return t, t, "Index", "Index"
         if t.endswith(".NS") or t.endswith(".BO"):
-            return t, t, "Unknown", "Stock"
-        return t, t, "Unknown", "Stock"
+            return t, t, "Unknown", "Equity"
+        return t, t, "Unknown", "Equity"
 
     # Sequential fetch with small delay between tickers to avoid rate limiting
     rows = []
@@ -1280,7 +1275,7 @@ if "_portfolio_cache" not in st.session_state:
     transactions = result[0] if isinstance(result, tuple) else result
     if transactions is None or transactions.empty:
         st.error("Uploaded file contains no valid data."); st.stop()
-    for col in ("Ticker", "Date", "Action", "Quantity", "Price"):
+    for col in ("Ticker", "Date", "Action", "Quantity"):  # Price is auto-fetched by data_engine
         if col not in transactions.columns:
             st.error(f"'{col}' column missing."); st.stop()
 
