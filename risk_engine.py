@@ -282,3 +282,50 @@ def generate_risk_summary(portfolio_returns: pd.Series,
     }
 
     return summary
+
+
+# ==========================================================
+# LIQUIDITY RISK
+# ==========================================================
+
+def compute_liquidity_risk(holdings_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute days-to-liquidate for each holding based on 3-month ADV.
+    holdings_df must have columns: Ticker, Quantity, Market Value.
+    Returns a DataFrame with liquidity metrics per ticker.
+    """
+    import yfinance as yf
+
+    rows = []
+    for _, row in holdings_df.iterrows():
+        ticker = row["Ticker"]
+        quantity = float(row["Quantity"])
+        market_value = float(row["Market Value"])
+        try:
+            vol_data = yf.download(ticker, period="3mo", auto_adjust=True, progress=False)
+            if vol_data.empty or "Volume" not in vol_data.columns:
+                raise ValueError("No volume data")
+            adv = float(vol_data["Volume"].mean())
+            days_to_liquidate = quantity / adv if adv > 0 else np.nan
+        except Exception:
+            adv = np.nan
+            days_to_liquidate = np.nan
+
+        if np.isnan(days_to_liquidate):
+            flag = "N/A"
+        elif days_to_liquidate < 1:
+            flag = "🟢 High"
+        elif days_to_liquidate <= 5:
+            flag = "🟡 Medium"
+        else:
+            flag = "🔴 Low"
+
+        rows.append({
+            "Ticker": ticker,
+            "Market Value": market_value,
+            "Avg Daily Volume (3M)": adv,
+            "Days to Liquidate": days_to_liquidate,
+            "Liquidity": flag,
+        })
+
+    return pd.DataFrame(rows)
