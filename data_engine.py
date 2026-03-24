@@ -314,33 +314,44 @@ def compute_xirr(transactions: pd.DataFrame, current_value: float,
     t0      = dates[0]
     years   = [(d - t0).days / 365.0 for d in dates]
 
+    # Guard: holding period must be at least 1 day
+    if max(years) == 0:
+        return np.nan
+
+    # Scale for relative convergence check
+    scale = max(abs(a) for a in amounts)
+
     def npv(rate):
         return sum(a / (1 + rate) ** t for a, t in zip(amounts, years))
 
     def dnpv(rate):
         return sum(-t * a / (1 + rate) ** (t + 1) for a, t in zip(amounts, years))
 
-    rate = 0.1
-    for _ in range(200):
-        try:
-            f  = npv(rate)
-            df = dnpv(rate)
-            if abs(df) < 1e-12:
-                break
-            new_rate = rate - f / df
-            if abs(new_rate - rate) < 1e-8:
+    # Try Newton's method from multiple starting points for robustness
+    for initial_rate in [0.1, 0.0, 0.5, -0.1, 2.0]:
+        rate = initial_rate
+        converged = False
+        for _ in range(200):
+            try:
+                f  = npv(rate)
+                df = dnpv(rate)
+                if abs(df) < 1e-12:
+                    break
+                new_rate = rate - f / df
+                if abs(new_rate - rate) < 1e-8:
+                    rate = new_rate
+                    converged = True
+                    break
                 rate = new_rate
+                if rate <= -1:
+                    rate = -0.999
+            except (ZeroDivisionError, OverflowError):
                 break
-            rate = new_rate
-            if rate <= -1:
-                rate = -0.999
-        except (ZeroDivisionError, OverflowError):
-            return np.nan
 
-    if rate <= -1 or abs(npv(rate)) > 1.0:
-        return np.nan
+        if converged and rate > -1 and abs(npv(rate)) / scale < 1e-4:
+            return round(rate, 6)
 
-    return round(rate, 6)
+    return np.nan
 
 
 # ==========================================================
