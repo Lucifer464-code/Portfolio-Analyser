@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Optional
 import yfinance as yf
-from config import TRADING_DAYS
+from config import TRADING_DAYS, BASE_RISK_FREE_RATE
 
 
 # ==========================================================
@@ -12,7 +12,7 @@ from config import TRADING_DAYS
 def get_asset_key_stats(asset_ticker, asset_price, asset_returns, asset_weight):
     asset_vol = asset_returns.std() * np.sqrt(TRADING_DAYS)
     asset_ret = asset_returns.mean() * TRADING_DAYS
-    sharpe    = (asset_ret / asset_vol) if asset_vol > 0 else 0.0
+    sharpe    = ((asset_ret - BASE_RISK_FREE_RATE) / asset_vol) if asset_vol > 0 else 0.0
     return {"ticker": asset_ticker, "weight": asset_weight,
             "annual_return": asset_ret, "volatility": asset_vol, "sharpe_ratio": sharpe}
 

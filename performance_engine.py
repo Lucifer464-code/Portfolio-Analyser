@@ -40,9 +40,10 @@ def get_performance_metrics(
     # Sharpe ratio (risk-free rate adjusted)
     sharpe = ((annualized_return - rf_rate) / volatility) if volatility > 0 else 0
 
-    # Sortino ratio (downside deviation)
-    downside = portfolio_returns[portfolio_returns < 0]
-    downside_vol = (downside.std() * np.sqrt(TRADING_DAYS)) if len(downside) > 0 else 0
+    # Sortino ratio (downside deviation — RMS of all negative deviations from zero)
+    excess = portfolio_returns - 0.0
+    semi_var = (np.minimum(excess, 0) ** 2).mean()
+    downside_vol = np.sqrt(semi_var) * np.sqrt(TRADING_DAYS) if semi_var > 0 else 0
     sortino = ((annualized_return - rf_rate) / downside_vol) if downside_vol > 0 else 0
     
     # Drawdown — properly calculated as (current_value - peak_value) / peak_value

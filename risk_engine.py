@@ -16,10 +16,11 @@ def annualized_volatility(returns: pd.Series) -> float:
 def downside_deviation(returns: pd.Series,
                        target: float = 0.0) -> float:
     returns = returns.dropna()
-    downside = returns[returns < target]
-    if len(downside) == 0:
+    if len(returns) == 0:
         return 0
-    return downside.std(ddof=1) * np.sqrt(TRADING_DAYS)
+    excess = returns - target
+    semi_var = (np.minimum(excess, 0) ** 2).mean()
+    return np.sqrt(semi_var) * np.sqrt(TRADING_DAYS)
 
 
 def annualized_return(returns: pd.Series) -> float:

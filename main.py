@@ -1088,7 +1088,7 @@ def cached_wsb(tickers):                     return wsb_sentiment(list(tickers))
 
 @st.cache_data(show_spinner=False)
 def detect_vol_regime(returns, window=60):
-    rv = (returns.rolling(window).std() * np.sqrt(252)).dropna()
+    rv = (returns.rolling(window).std() * np.sqrt(TRADING_DAYS)).dropna()
     if rv.empty: return "N/A", "#64748b", 0.0
     latest, pct = float(rv.iloc[-1]), float(rv.rank(pct=True).iloc[-1])
     return ("LOW VOL","#22c55e",latest) if pct<.33 else ("NORMAL VOL","#f59e0b",latest) if pct<.66 else ("HIGH VOL","#ef4444",latest)
@@ -1470,10 +1470,10 @@ with col_pdf:
                 enhancements_pdf = None
             pdf_bytes = generate_portfolio_pdf(
                 df, risk_summary, weights_series, optimal_weights,
-                curr_ret  = weights_series @ (returns.mean() * 252),
-                curr_vol  = float(np.sqrt(weights_series @ (returns.cov() * 252) @ weights_series)),
-                opt_ret   = float(optimal_weights @ (returns.mean() * 252)) if optimal_weights is not None else 0,
-                opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov() * 252) @ optimal_weights)) if optimal_weights is not None else 0,
+                curr_ret  = weights_series @ (returns.mean() * TRADING_DAYS),
+                curr_vol  = float(np.sqrt(weights_series @ (returns.cov() * TRADING_DAYS) @ weights_series)),
+                opt_ret   = float(optimal_weights @ (returns.mean() * TRADING_DAYS)) if optimal_weights is not None else 0,
+                opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov() * TRADING_DAYS) @ optimal_weights)) if optimal_weights is not None else 0,
                 opt_method        = opt_method,
                 health_score      = health_score,
                 portfolio_returns = portfolio_returns,
@@ -2026,7 +2026,7 @@ with tab3:
         # ── Risk Parity: risk contribution chart ──────────
         if opt_method == "Risk Parity":
             section_header("Risk Contributions — Equal Risk Parity Target")
-            cov_ann  = returns.cov().values * 252
+            cov_ann  = returns.cov().values * TRADING_DAYS
             w_arr    = optimal_weights.values
             pv       = float(np.sqrt(w_arr @ cov_ann @ w_arr))
             rc       = w_arr * (cov_ann @ w_arr) / pv
@@ -2046,7 +2046,7 @@ with tab3:
         # ── Max Diversification: DR metrics ───────────────
         if opt_method == "Max Diversification":
             section_header("Diversification Ratio")
-            cov_ann    = returns.cov().values * 252
+            cov_ann    = returns.cov().values * TRADING_DAYS
             asset_vols = np.sqrt(np.diag(cov_ann))
             w_opt      = optimal_weights.values
             w_cur      = weights_series.reindex(optimal_weights.index).fillna(0).values

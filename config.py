@@ -4,7 +4,7 @@
 
 # Core assumptions
 BASE_RISK_FREE_RATE = 0.04
-TRADING_DAYS = 365.25
+TRADING_DAYS = 365
 
 # Optimization parameters
 REGULARIZATION_STRENGTH = 0.05
