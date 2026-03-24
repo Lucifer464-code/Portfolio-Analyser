@@ -343,5 +343,53 @@ def get_rolling_metrics(
             (benchmark_returns.rolling(window).std() * np.sqrt(TRADING_DAYS))
         )
         df["Benchmark Sharpe"] = bench_sharpe
-    
+
+
+# ==========================================================
+# UPSIDE / DOWNSIDE CAPTURE RATIOS
+# ==========================================================
+
+def compute_capture_ratios(
+    portfolio_returns: pd.Series,
+    benchmark_returns: pd.Series,
+) -> Dict:
+    """
+    Upside capture:   portfolio compound return on benchmark-up days
+                      divided by benchmark compound return on those days × 100.
+    Downside capture: same for benchmark-down days.
+    Values > 100 upside = good. Values < 100 downside = good.
+    """
+    aligned = pd.concat([
+        portfolio_returns.rename("portfolio"),
+        benchmark_returns.rename("benchmark"),
+    ], axis=1).dropna()
+
+    if len(aligned) == 0:
+        return {"upside_capture": np.nan, "downside_capture": np.nan}
+
+    up_days   = aligned[aligned["benchmark"] > 0]
+    down_days = aligned[aligned["benchmark"] < 0]
+
+    def _compound(s: pd.Series) -> float:
+        return float((1 + s).prod())
+
+    if len(up_days) > 0:
+        bm_up   = _compound(up_days["benchmark"])
+        port_up = _compound(up_days["portfolio"])
+        upside_capture = port_up / bm_up * 100
+    else:
+        upside_capture = np.nan
+
+    if len(down_days) > 0:
+        bm_down   = _compound(down_days["benchmark"])
+        port_down = _compound(down_days["portfolio"])
+        downside_capture = port_down / bm_down * 100
+    else:
+        downside_capture = np.nan
+
+    return {
+        "upside_capture":   upside_capture,
+        "downside_capture": downside_capture,
+    }
+
     return df

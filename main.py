@@ -1215,12 +1215,13 @@ if uploaded_file is None:
         <div style="font-family:'JetBrains Mono','DM Mono',monospace;font-size:12px;
             color:var(--text-secondary);line-height:2;background:var(--bg-elevated);
             border-radius:var(--radius-sm);padding:14px 16px;border:1px solid var(--border-subtle);">
-          <span style="color:var(--text-muted);">Ticker, Date, Action, Quantity, Price</span><br>
-          AAPL, 2023-01-15, <span style="color:#22c55e;">Buy</span>, 10, 135.20<br>
-          MSFT, 2023-02-10, <span style="color:#22c55e;">Buy</span>, 5, 252.75<br>
-          AAPL, 2024-06-01, <span style="color:#ef4444;">Sell</span>, 3, 189.50
+          <span style="color:var(--text-muted);">Ticker, Date, Action, Quantity</span><br>
+          AAPL, 2023-01-15, <span style="color:#22c55e;">Buy</span>, 10<br>
+          MSFT, 2023-02-10, <span style="color:#22c55e;">Buy</span>, 5<br>
+          AAPL, 2024-06-01, <span style="color:#ef4444;">Sell</span>, 3
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6;">
+          Prices are auto-fetched from Yahoo Finance using the closing price on each transaction date — no Price column needed.
           Indian stocks: append <strong style="color:var(--accent);">.NS</strong> (NSE) or
           <strong style="color:var(--accent);">.BO</strong> (BSE) to the ticker.
           Headers are flexible — column names are auto-detected.
