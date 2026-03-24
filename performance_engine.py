@@ -344,6 +344,8 @@ def get_rolling_metrics(
         )
         df["Benchmark Sharpe"] = bench_sharpe
 
+    return df
+
 
 # ==========================================================
 # UPSIDE / DOWNSIDE CAPTURE RATIOS

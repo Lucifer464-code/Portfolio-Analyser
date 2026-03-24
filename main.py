@@ -2364,7 +2364,7 @@ with tab4:
 
     # ── Performance Attribution ─────────────────────────────
     section_header("Sector Contribution")
-    _sector_map_dict = metadata["Sector"].to_dict()
+    _sector_map_dict = df.set_index("Ticker")["Sector"].to_dict()
     _perf_returns_sliced = slice_tf(returns, pm_tf) if pm_tf != "All" else returns
     _sc_df = compute_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
     if not _sc_df.empty:
