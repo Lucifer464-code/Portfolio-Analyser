@@ -189,3 +189,42 @@ def get_asset_fundamental_table(ticker: str) -> pd.DataFrame:
     result = pd.DataFrame(data)
     result["Metric"] = result["Metric"].astype(str)
     return result
+
+
+# ==========================================================
+# DIVIDEND TRACKING
+# ==========================================================
+
+def get_dividend_data(ticker: str, quantity: float, current_price: float) -> dict:
+    """
+    Fetch dividend history for a ticker and compute yield and annual income.
+    Returns a dict with keys: has_dividends, yield, annual_income, history (pd.Series).
+    """
+    try:
+        dividends = yf.Ticker(ticker).dividends
+        if dividends is None or dividends.empty:
+            return {"has_dividends": False, "yield": 0.0, "annual_income": 0.0, "history": pd.Series(dtype=float)}
+
+        # Last 12 months for yield calculation (use UTC to handle tz-aware indices)
+        one_year_ago = pd.Timestamp.today(tz='UTC') - pd.DateOffset(years=1)
+        last_12m = dividends[dividends.index >= one_year_ago]
+        annual_divs = float(last_12m.sum())
+
+        # Last 5 years for chart
+        five_years_ago = pd.Timestamp.today(tz='UTC') - pd.DateOffset(years=5)
+        history = dividends[dividends.index >= five_years_ago]
+
+        if annual_divs == 0 or current_price <= 0:
+            return {"has_dividends": False, "yield": 0.0, "annual_income": 0.0, "history": history}
+
+        div_yield = annual_divs / current_price
+        annual_income = div_yield * current_price * quantity
+
+        return {
+            "has_dividends": True,
+            "yield":         div_yield,
+            "annual_income": annual_income,
+            "history":       history,
+        }
+    except Exception:
+        return {"has_dividends": False, "yield": 0.0, "annual_income": 0.0, "history": pd.Series(dtype=float)}

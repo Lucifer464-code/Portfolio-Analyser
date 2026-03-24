@@ -392,4 +392,150 @@ def compute_capture_ratios(
         "downside_capture": downside_capture,
     }
 
-    return df
+
+# ==========================================================
+# PERFORMANCE ATTRIBUTION
+# ==========================================================
+
+def compute_sector_contribution(
+    weights_series: pd.Series,
+    returns: pd.DataFrame,
+    sector_map: dict,
+) -> pd.DataFrame:
+    """
+    Sector contribution = sector_weight × sector_cumulative_return.
+    sector_map: {ticker: sector_string}
+    weights_series: portfolio weights indexed by ticker.
+    returns: daily returns DataFrame indexed by date, columns = tickers.
+    """
+    rows = []
+    # Group tickers by sector
+    sectors: dict = {}
+    for ticker, weight in weights_series.items():
+        sector = sector_map.get(ticker, "Unknown")
+        sectors.setdefault(sector, []).append(ticker)
+
+    for sector, tickers in sectors.items():
+        valid = [t for t in tickers if t in returns.columns]
+        if not valid:
+            continue
+        sector_weights = weights_series.reindex(valid).fillna(0)
+        total_sector_weight = float(sector_weights.sum())
+        if total_sector_weight == 0:
+            continue
+        # Weighted average sector return
+        norm_w = sector_weights / total_sector_weight
+        sector_ret_series = returns[valid] @ norm_w.values
+        sector_cum_return = float((1 + sector_ret_series).prod() - 1)
+        contribution = total_sector_weight * sector_cum_return
+
+        rows.append({
+            "Sector":       sector,
+            "Weight":       total_sector_weight,
+            "Return":       sector_cum_return,
+            "Contribution": contribution,
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values("Contribution", ascending=False).reset_index(drop=True)
+
+
+# Benchmark sector weights snapshot (Q1 2026) — update periodically
+_SPY_SECTOR_WEIGHTS = {
+    "Technology": 0.31, "Financials": 0.13, "Healthcare": 0.12,
+    "Consumer Discretionary": 0.11, "Industrials": 0.09,
+    "Communication Services": 0.08, "Consumer Staples": 0.06,
+    "Energy": 0.04, "Real Estate": 0.02, "Materials": 0.02, "Utilities": 0.02,
+}
+_NIFTY_SECTOR_WEIGHTS = {
+    "Financials": 0.35, "Technology": 0.14, "Energy": 0.12,
+    "Consumer": 0.10, "Industrials": 0.08, "Healthcare": 0.07,
+    "Materials": 0.06, "Automobile": 0.05, "Others": 0.03,
+}
+_BENCHMARK_SECTOR_MAP = {
+    "^GSPC": _SPY_SECTOR_WEIGHTS,
+    "^NSEI": _NIFTY_SECTOR_WEIGHTS,
+    "^CRSLDX": _NIFTY_SECTOR_WEIGHTS,
+}
+
+
+def compute_brinson_attribution(
+    weights_series: pd.Series,
+    returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
+    sector_map: dict,
+    benchmark: str,
+) -> tuple:
+    """
+    Full Brinson attribution: allocation, selection, and interaction effects per sector.
+    Only valid for ^GSPC, ^NSEI, ^CRSLDX benchmarks.
+    Returns (results_df, mixed_market_warning: bool).
+    """
+    bm_sector_weights = _BENCHMARK_SECTOR_MAP.get(benchmark)
+    if bm_sector_weights is None:
+        return pd.DataFrame(), False
+
+    # Mixed-market detection
+    is_indian = benchmark in ("^NSEI", "^CRSLDX")
+    mixed_market = False
+    for ticker in weights_series.index:
+        ticker_is_indian = ticker.endswith(".NS") or ticker.endswith(".BO")
+        if is_indian and not ticker_is_indian:
+            mixed_market = True
+            break
+        if not is_indian and ticker_is_indian:
+            mixed_market = True
+            break
+
+    # Total benchmark return over the period
+    total_bm_return = float((1 + benchmark_returns).prod() - 1)
+
+    # Build portfolio sector returns and weights
+    sector_data = {}
+    for ticker, weight in weights_series.items():
+        sector = sector_map.get(ticker, "Unknown")
+        if sector == "Unknown":
+            continue
+        sector_data.setdefault(sector, {"tickers": [], "weight": 0.0})
+        sector_data[sector]["tickers"].append(ticker)
+        sector_data[sector]["weight"] += weight
+
+    rows = []
+    all_sectors = set(list(sector_data.keys()) + list(bm_sector_weights.keys()))
+
+    for sector in all_sectors:
+        wp = sector_data.get(sector, {}).get("weight", 0.0)
+        wb = bm_sector_weights.get(sector, 0.0)
+        tickers = sector_data.get(sector, {}).get("tickers", [])
+
+        # Portfolio sector return
+        valid = [t for t in tickers if t in returns.columns]
+        if valid and wp > 0:
+            norm_w = weights_series.reindex(valid).fillna(0) / wp
+            sector_ret_series = returns[valid] @ norm_w.values
+            rp = float((1 + sector_ret_series).prod() - 1)
+        else:
+            rp = 0.0
+
+        # Benchmark sector return approximated via benchmark total × weight ratio
+        # (exact per-sector benchmark returns unavailable without full index data)
+        rb = total_bm_return  # simplification: assume each sector tracks benchmark
+
+        allocation  = (wp - wb) * (rb - total_bm_return)
+        selection   = wb * (rp - rb)
+        interaction = (wp - wb) * (rp - rb)
+
+        rows.append({
+            "Sector":             sector,
+            "Portfolio Weight":   wp,
+            "Benchmark Weight":   wb,
+            "Allocation Effect":  allocation,
+            "Selection Effect":   selection,
+            "Interaction Effect": interaction,
+            "Total Active":       allocation + selection + interaction,
+        })
+
+    df = pd.DataFrame(rows).sort_values("Total Active", ascending=False).reset_index(drop=True)
+    return df, mixed_market

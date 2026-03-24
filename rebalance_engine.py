@@ -165,3 +165,85 @@ def generate_rebalance_tables(
     }
 
     return mvo_table, rule_table, mvo_turnover, transaction_cost_info
+
+
+# ==========================================================
+# SCENARIO-BASED REBALANCING
+# ==========================================================
+
+def simulate_cash_injection(
+    weights_series: pd.Series,
+    returns: pd.DataFrame,
+    optimal_weights: pd.Series,
+    cash_amount: float,
+    total_value: float,
+) -> tuple:
+    """
+    Distribute cash_amount into the portfolio proportionally to optimal_weights.
+    Returns (new_weights, port_return, port_vol, sharpe).
+    """
+    from optimizer import portfolio_performance
+
+    new_total = total_value + cash_amount
+
+    # Current market values per ticker
+    current_values = weights_series * total_value
+    # Allocate new cash proportionally to optimal weights
+    cash_allocation = optimal_weights * cash_amount
+    new_values = current_values.add(cash_allocation, fill_value=0)
+    new_weights = (new_values / new_total).reindex(returns.columns).fillna(0)
+
+    w_arr = new_weights.values
+    port_return, port_vol, sharpe = portfolio_performance(w_arr, returns, rf_multiplier=1.0)
+
+    return new_weights, port_return, port_vol, sharpe
+
+
+def simulate_trade(
+    weights_series: pd.Series,
+    returns: pd.DataFrame,
+    ticker: str,
+    action: str,
+    quantity: float,
+    current_price: float,
+    total_value: float,
+    risk_profile: str,
+) -> tuple:
+    """
+    Simulate buying or selling 'quantity' shares of 'ticker'.
+    action: 'Buy' or 'Sell'.
+    Returns (new_weights, port_return, port_vol, sharpe, warning_str_or_None).
+    """
+    from optimizer import portfolio_performance
+    from config import RISK_PROFILES
+
+    max_weight = RISK_PROFILES[risk_profile]["max_weight"]
+    trade_value = quantity * current_price
+    current_values = weights_series * total_value
+
+    if action == "Buy":
+        new_total = total_value + trade_value
+        ticker_value = current_values.get(ticker, 0.0) + trade_value
+    else:  # Sell
+        new_total = total_value - trade_value
+        ticker_value = max(current_values.get(ticker, 0.0) - trade_value, 0.0)
+
+    if new_total <= 0:
+        return weights_series, 0.0, 0.0, 0.0, "Trade would result in zero or negative portfolio value."
+
+    new_values = current_values.copy()
+    new_values[ticker] = ticker_value
+    new_weights = (new_values / new_total).reindex(returns.columns).fillna(0)
+    new_weights = new_weights.clip(lower=0)
+
+    w_arr = new_weights.values
+    port_return, port_vol, sharpe = portfolio_performance(w_arr, returns, rf_multiplier=1.0)
+
+    # Warning if any position breaches max_weight
+    breaches = new_weights[new_weights > max_weight]
+    warning = None
+    if not breaches.empty:
+        breach_list = ", ".join(f"{t} ({v:.1%})" for t, v in breaches.items())
+        warning = f"Position size exceeds {max_weight:.0%} limit for: {breach_list}"
+
+    return new_weights, port_return, port_vol, sharpe, warning

@@ -25,7 +25,8 @@ from data_engine import (
 )
 from risk_engine import (generate_risk_summary, rolling_volatility, rolling_correlation,
     compute_drawdown_series, var_cvar_summary, sector_concentration,
-    asset_type_concentration, effective_n)
+    asset_type_concentration, effective_n,
+    compute_liquidity_risk, run_stress_tests)
 from optimizer import (
     optimize_portfolio, simulate_efficient_frontier, portfolio_performance,
     OPTIMIZERS,
@@ -38,9 +39,11 @@ from enhancement_engine import (
 )
 from asset_analytics_engine import (
     get_asset_key_stats, compute_rolling_volatility, compute_rolling_correlation,
-    compute_asset_drawdown, get_asset_fundamental_table,
+    compute_asset_drawdown, get_asset_fundamental_table, get_dividend_data,
 )
-from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics
+from performance_engine import (get_performance_metrics, get_period_returns, get_rolling_metrics,
+    compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution)
+from rebalance_engine import simulate_cash_injection, simulate_trade
 from external_apis import (
     finnhub_earnings_surprises, finnhub_recommendations,
     finnhub_insider_sentiment, finnhub_portfolio_consensus,
@@ -1081,6 +1084,24 @@ def cached_sec_insider(ticker):              return sec_insider_transactions(tic
 @st.cache_data(ttl=1800,  show_spinner=False)
 def cached_wsb(tickers):                     return wsb_sentiment(list(tickers))
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_liquidity_risk(tickers_tuple, quantities_tuple, market_values_tuple):
+    holdings_mini = pd.DataFrame({
+        "Ticker":       list(tickers_tuple),
+        "Quantity":     list(quantities_tuple),
+        "Market Value": list(market_values_tuple),
+    })
+    return compute_liquidity_risk(holdings_mini)
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_stress_tests(tickers_tuple, weights_tuple):
+    weights = pd.Series(dict(zip(tickers_tuple, weights_tuple)))
+    return run_stress_tests(weights)
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_dividend_data(ticker, quantity, current_price):
+    return get_dividend_data(ticker, float(quantity), float(current_price))
+
 
 # ==========================================================
 # VOLATILITY REGIME
@@ -1655,6 +1676,46 @@ with tab2:
         else:
             empty_state("📉","No benchmark data","Benchmark returns could not be fetched")
 
+    # ── Stress Testing ─────────────────────────────────────
+    section_header("Historical Stress Tests", color="var(--negative)")
+    with st.spinner("Running stress scenarios…"):
+        _stress_df = cached_stress_tests(
+            tickers_tuple,
+            tuple(weights_series.reindex(tickers).fillna(0).values),
+        )
+    if not _stress_df.empty:
+        _s_cols = st.columns(len(_stress_df))
+        for _col, (_, _srow) in zip(_s_cols, _stress_df.iterrows()):
+            def _fmt_pct(v):
+                return f"{v:.2%}" if v is not None and not (isinstance(v, float) and np.isnan(v)) else "N/A"
+            _col.markdown(f"""
+            <div style="background:var(--bg-card);border:1px solid var(--border);
+                border-top:2px solid var(--negative);border-radius:var(--radius);
+                padding:16px;text-align:center;">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+                  letter-spacing:0.1em;color:var(--text-muted);margin-bottom:12px;">
+                {_srow['Scenario']}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">
+                {_srow['Period']}</div>
+              <div style="margin-bottom:6px;">
+                <div style="font-size:9px;color:var(--text-muted);">Total Return</div>
+                <div style="font-size:16px;font-weight:700;color:{'var(--negative)' if _srow['Total Return'] is not None and _srow['Total Return'] < 0 else 'var(--positive)'};">
+                  {_fmt_pct(_srow['Total Return'])}</div>
+              </div>
+              <div style="margin-bottom:6px;">
+                <div style="font-size:9px;color:var(--text-muted);">Max Drawdown</div>
+                <div style="font-size:14px;font-weight:600;color:var(--negative);">
+                  {_fmt_pct(_srow['Max Drawdown'])}</div>
+              </div>
+              <div>
+                <div style="font-size:9px;color:var(--text-muted);">Worst Day</div>
+                <div style="font-size:14px;font-weight:600;color:var(--negative);">
+                  {_fmt_pct(_srow['Worst Day'])}</div>
+              </div>
+            </div>""", unsafe_allow_html=True)
+    else:
+        empty_state("📉", "Stress test data unavailable")
+
     # ── VaR / CVaR ─────────────────────────────────────────
     section_header("Value at Risk & Expected Shortfall", color="var(--negative)")
 
@@ -1721,6 +1782,25 @@ with tab2:
         bargap=0.05,
     )
     st.plotly_chart(_hist_fig, use_container_width=True)
+
+    # ── Liquidity Risk ─────────────────────────────────────
+    section_header("Liquidity Risk", color="var(--warning)")
+    with st.spinner("Fetching volume data…"):
+        _liq_df = cached_liquidity_risk(
+            tickers_tuple,
+            tuple(df.set_index("Ticker")["Quantity"].reindex(tickers).fillna(0).values),
+            tuple(df.set_index("Ticker")["Market Value"].reindex(tickers).fillna(0).values),
+        )
+    if not _liq_df.empty:
+        _liq_display = _liq_df.copy()
+        _liq_display["Market Value"]          = _liq_display["Market Value"].map(lambda x: f"{_currency}{x:,.0f}")
+        _liq_display["Avg Daily Volume (3M)"] = _liq_display["Avg Daily Volume (3M)"].map(
+            lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+        _liq_display["Days to Liquidate"]     = _liq_display["Days to Liquidate"].map(
+            lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+        st.dataframe(_liq_display, use_container_width=True)
+    else:
+        empty_state("💧", "Liquidity data unavailable", "Could not fetch volume data")
 
     # ── Concentration Analytics ────────────────────────────
     section_header("Concentration & Diversification")
@@ -2093,6 +2173,82 @@ with tab3:
     else:
         empty_state("🎯","Optimization unavailable","Could not compute optimal weights for this portfolio")
 
+    # ── Scenario Analysis ──────────────────────────────────
+    section_header("Scenario Analysis", color="var(--cyan)")
+    with st.expander("Run a what-if scenario", expanded=False):
+        _scenario_mode = st.radio(
+            "Mode", ["Cash Injection", "Trade Simulation"],
+            horizontal=True, key="scenario_mode"
+        )
+
+        if _scenario_mode == "Cash Injection":
+            _cash_input = st.number_input(
+                f"Cash to inject ({_currency})", min_value=0.0,
+                value=float(total_value * 0.1), step=100.0, key="scenario_cash"
+            )
+            if st.button("Run Cash Injection", key="run_cash_injection") and optimal_weights is not None:
+                _nw, _nr, _nv, _ns = simulate_cash_injection(
+                    weights_series, returns, optimal_weights, _cash_input, total_value
+                )
+                _curr_ret, _curr_vol, _curr_s = portfolio_performance(
+                    weights_series.values, returns, rf_multiplier=1.0
+                )
+                st.markdown("**Before / After**")
+                _sc1, _sc2, _sc3 = st.columns(3)
+                _sc1.metric("Sharpe",     f"{_ns:.3f}", delta=f"{_ns - _curr_s:+.3f}")
+                _sc2.metric("Volatility", f"{_nv:.2%}", delta=f"{_nv - _curr_vol:+.2%}")
+                _sc3.metric("Return",     f"{_nr:.2%}", delta=f"{_nr - _curr_ret:+.2%}")
+                _nw_df = pd.DataFrame({
+                    "Ticker":         _nw.index,
+                    "Current Weight": weights_series.reindex(_nw.index).fillna(0).values,
+                    "New Weight":     _nw.values,
+                    "Change":         (_nw - weights_series.reindex(_nw.index).fillna(0)).values,
+                }).reset_index(drop=True)
+                st.dataframe(_nw_df.style.format({
+                    "Current Weight": "{:.2%}",
+                    "New Weight":     "{:.2%}",
+                    "Change":         "{:+.2%}",
+                }), use_container_width=True)
+
+        else:  # Trade Simulation
+            _trade_ticker = st.selectbox(
+                "Ticker", options=tickers + ["(new ticker)"], key="scenario_ticker"
+            )
+            if _trade_ticker == "(new ticker)":
+                _trade_ticker = st.text_input("Enter ticker symbol", key="scenario_new_ticker").upper().strip()
+            _trade_action   = st.radio("Action", ["Buy", "Sell"], horizontal=True, key="scenario_action")
+            _trade_qty      = st.number_input("Quantity (shares)", min_value=0.01, value=1.0, key="scenario_qty")
+            _trade_price_default = float(price_data[_trade_ticker].iloc[-1]) if _trade_ticker in price_data.columns else 0.0
+            _trade_price    = st.number_input(f"Price ({_currency})", min_value=0.01,
+                                              value=max(_trade_price_default, 0.01), key="scenario_price")
+
+            if st.button("Run Trade Simulation", key="run_trade_sim") and _trade_ticker:
+                _nw2, _nr2, _nv2, _ns2, _warn = simulate_trade(
+                    weights_series, returns, _trade_ticker, _trade_action,
+                    _trade_qty, _trade_price, total_value, risk_profile
+                )
+                _curr_ret2, _curr_vol2, _curr_s2 = portfolio_performance(
+                    weights_series.values, returns, rf_multiplier=1.0
+                )
+                if _warn:
+                    st.warning(_warn)
+                st.markdown("**Before / After**")
+                _tc1, _tc2, _tc3 = st.columns(3)
+                _tc1.metric("Sharpe",     f"{_ns2:.3f}", delta=f"{_ns2 - _curr_s2:+.3f}")
+                _tc2.metric("Volatility", f"{_nv2:.2%}", delta=f"{_nv2 - _curr_vol2:+.2%}")
+                _tc3.metric("Return",     f"{_nr2:.2%}", delta=f"{_nr2 - _curr_ret2:+.2%}")
+                _nw2_df = pd.DataFrame({
+                    "Ticker":         _nw2.index,
+                    "Current Weight": weights_series.reindex(_nw2.index).fillna(0).values,
+                    "New Weight":     _nw2.values,
+                    "Change":         (_nw2 - weights_series.reindex(_nw2.index).fillna(0)).values,
+                }).reset_index(drop=True)
+                st.dataframe(_nw2_df.style.format({
+                    "Current Weight": "{:.2%}",
+                    "New Weight":     "{:.2%}",
+                    "Change":         "{:+.2%}",
+                }), use_container_width=True)
+
 
 # ── TAB 4: PERFORMANCE ─────────────────────────────────────
 with tab4:
@@ -2183,11 +2339,61 @@ with tab4:
     fig.update_traces(hovertemplate="%{y:.2%}")
     st.plotly_chart(fig, use_container_width=True)
 
+    # ── Capture Ratios ─────────────────────────────────────
+    if benchmark_returns is not None:
+        _captures = compute_capture_ratios(_pr_sliced, _br_sliced)
+        _uc = _captures.get("upside_capture")
+        _dc = _captures.get("downside_capture")
+        _cap_c1, _cap_c2 = st.columns(2)
+        _cap_c1.metric(
+            "Upside Capture",
+            f"{_uc:.1f}%" if _uc is not None and not np.isnan(_uc) else "N/A",
+            help="% of benchmark's up-day gains captured. >100% = outperforms on up days."
+        )
+        _cap_c2.metric(
+            "Downside Capture",
+            f"{_dc:.1f}%" if _dc is not None and not np.isnan(_dc) else "N/A",
+            help="% of benchmark's down-day losses mirrored. <100% = better protection on down days."
+        )
+
     section_header("Period Returns")
     pr      = get_period_returns(portfolio_returns, benchmark_returns)
     pr.index += 1
     pl_cols = ["Portfolio Return","Benchmark Return","Excess Return"] if "Benchmark Return" in pr.columns else ["Portfolio Return"]
     st.dataframe(style_pl(pr, pl_cols).format({c:"{:.2%}" for c in pl_cols}), use_container_width=True)
+
+    # ── Performance Attribution ─────────────────────────────
+    section_header("Sector Contribution")
+    _sector_map_dict = metadata["Sector"].to_dict()
+    _perf_returns_sliced = slice_tf(returns, pm_tf) if pm_tf != "All" else returns
+    _sc_df = compute_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
+    if not _sc_df.empty:
+        _sc_fig = px.bar(
+            _sc_df, x="Contribution", y="Sector", orientation="h",
+            color="Contribution", color_continuous_scale=["#ef4444","#f5f5f5","#22c55e"],
+            text=_sc_df["Contribution"].map(lambda x: f"{x:.2%}"),
+        )
+        _sc_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
+                              showlegend=False, coloraxis_showscale=False)
+        _sc_fig.update_traces(textposition="outside")
+        st.plotly_chart(_sc_fig, use_container_width=True)
+    else:
+        empty_state("📊", "Sector data unavailable")
+
+    if benchmark in ("^GSPC", "^NSEI", "^CRSLDX") and benchmark_returns is not None:
+        section_header("Brinson Attribution")
+        _br_df, _mixed = compute_brinson_attribution(
+            weights_series, _perf_returns_sliced, _br_sliced, _sector_map_dict, benchmark
+        )
+        if _mixed:
+            st.warning("Attribution results may be misleading for mixed-market portfolios.")
+        if not _br_df.empty:
+            _br_display = _br_df.copy()
+            for _bcol in ["Portfolio Weight", "Benchmark Weight"]:
+                _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:.2%}")
+            for _bcol in ["Allocation Effect", "Selection Effect", "Interaction Effect", "Total Active"]:
+                _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:+.4%}")
+            st.dataframe(_br_display, use_container_width=True)
 
     section_header("Rolling 60-Day Sharpe Ratio")
     rm  = get_rolling_metrics(portfolio_returns, benchmark_returns, window=60)
@@ -2345,6 +2551,28 @@ with tab5:
     fig = px.area(compute_asset_drawdown(asset_returns_tf), color_discrete_sequence=["#ef4444"])
     fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.1)")
     quick_chart(fig, 260)
+
+    # ── Dividend Tracking ──────────────────────────────────
+    section_header("Dividend Tracking", color="var(--positive)")
+    _asset_price_val = float(price_data[selected_asset].iloc[-1]) if selected_asset in price_data.columns else 0.0
+    _asset_qty_val   = float(df.set_index("Ticker")["Quantity"].get(selected_asset, 0))
+    _div_data = cached_dividend_data(selected_asset, _asset_qty_val, _asset_price_val)
+
+    if _div_data["has_dividends"]:
+        _dc1, _dc2 = st.columns(2)
+        _dc1.metric("Dividend Yield",     f"{_div_data['yield']:.2%}")
+        _dc2.metric("Est. Annual Income", f"{_currency}{_div_data['annual_income']:,.2f}")
+        if not _div_data["history"].empty:
+            _div_fig = px.bar(
+                x=_div_data["history"].index,
+                y=_div_data["history"].values,
+                labels={"x": "Date", "y": "Dividend per Share"},
+                color_discrete_sequence=["#22c55e"],
+            )
+            _div_fig.update_layout(height=240, margin=dict(l=0,r=0,t=0,b=0))
+            st.plotly_chart(_div_fig, use_container_width=True)
+    else:
+        empty_state("💰", "No dividends", "This asset does not pay dividends")
 
     section_header("Fundamental Metrics")
     fund_df = get_asset_fundamental_table(selected_asset)
