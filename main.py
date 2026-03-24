@@ -1839,7 +1839,8 @@ with tab2:
     # ── Correlation Matrix ─────────────────────────────────
     if returns.shape[1] > 1:
         section_header("Asset Correlation Matrix")
-        fig = px.imshow(returns.corr(), text_auto=".2f", color_continuous_scale="RdBu_r",
+        _corr_returns = price_data.ffill().pct_change().dropna(how='all')
+        fig = px.imshow(_corr_returns.corr(), text_auto=".2f", color_continuous_scale="RdBu_r",
                         origin="lower", aspect="auto")
         fig.update_layout(height=580, margin=dict(l=20,r=20,t=20,b=20))
         st.plotly_chart(fig, use_container_width=True)
