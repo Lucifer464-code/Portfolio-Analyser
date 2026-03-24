@@ -329,3 +329,76 @@ def compute_liquidity_risk(holdings_df: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+# ==========================================================
+# STRESS TESTING
+# ==========================================================
+
+_STRESS_SCENARIOS = {
+    "Dot-com Crash":          ("2000-03-10", "2002-10-09"),
+    "Global Financial Crisis":("2007-10-09", "2009-03-09"),
+    "COVID Crash":            ("2020-02-19", "2020-03-23"),
+    "2022 Rate Hikes":        ("2022-01-03", "2022-10-12"),
+}
+
+
+def run_stress_tests(weights_series: pd.Series) -> pd.DataFrame:
+    """
+    For each preset historical scenario, fetch price data independently
+    and compute portfolio total return, max drawdown, and worst single day.
+    weights_series: index = ticker symbols, values = portfolio weights (sum to 1).
+    Returns a DataFrame with one row per scenario.
+    """
+    import yfinance as yf
+
+    tickers = weights_series.index.tolist()
+    rows = []
+
+    for scenario_name, (start, end) in _STRESS_SCENARIOS.items():
+        try:
+            raw = yf.download(
+                tickers,
+                start=start,
+                end=end,
+                auto_adjust=True,
+                progress=False,
+            )
+            if raw.empty:
+                raise ValueError("No data returned")
+
+            if isinstance(raw.columns, pd.MultiIndex):
+                prices = raw["Close"]
+            else:
+                prices = raw
+
+            # Align weights to available tickers
+            available = [t for t in tickers if t in prices.columns]
+            if not available:
+                raise ValueError("No tickers in scenario window")
+
+            w = weights_series.reindex(available).fillna(0)
+            w = w / w.sum()  # re-normalise for available tickers
+
+            rets = prices[available].ffill().pct_change().dropna(how="all").fillna(0)
+            port_rets = rets @ w.values
+
+            total_return  = float((1 + port_rets).prod() - 1)
+            cumulative    = (1 + port_rets).cumprod()
+            peak          = cumulative.cummax()
+            drawdown      = (cumulative - peak) / peak
+            max_dd        = float(drawdown.min())
+            worst_day     = float(port_rets.min())
+
+        except Exception:
+            total_return = max_dd = worst_day = None
+
+        rows.append({
+            "Scenario":     scenario_name,
+            "Period":       f"{start} → {end}",
+            "Total Return": total_return,
+            "Max Drawdown": max_dd,
+            "Worst Day":    worst_day,
+        })
+
+    return pd.DataFrame(rows)
