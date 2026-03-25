@@ -25,8 +25,7 @@ from data_engine import (
 )
 from risk_engine import (generate_risk_summary, rolling_volatility, rolling_correlation,
     compute_drawdown_series, var_cvar_summary, sector_concentration,
-    asset_type_concentration, effective_n,
-    compute_liquidity_risk, run_stress_tests)
+    asset_type_concentration, effective_n, compute_liquidity_risk, run_stress_tests)
 from optimizer import (
     optimize_portfolio, simulate_efficient_frontier, portfolio_performance,
     OPTIMIZERS,
@@ -41,8 +40,7 @@ from asset_analytics_engine import (
     get_asset_key_stats, compute_rolling_volatility, compute_rolling_correlation,
     compute_asset_drawdown, get_asset_fundamental_table, get_dividend_data,
 )
-from performance_engine import (get_performance_metrics, get_period_returns, get_rolling_metrics,
-    compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution)
+from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics, compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution
 from rebalance_engine import simulate_cash_injection, simulate_trade
 from external_apis import (
     finnhub_earnings_surprises, finnhub_recommendations,
@@ -59,9 +57,9 @@ st.set_page_config(layout="wide", page_title="Portfolio Analyser", page_icon="�
 # ── Plotly template ────────────────────────────────────────
 pio.templates["portfolio_dark"] = go.layout.Template(
     layout=go.Layout(
-        paper_bgcolor="#0b1120", plot_bgcolor="#0b1120",
-        font=dict(family="DM Sans, sans-serif", color="#94a3b8", size=12),
-        colorway=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16"],
+        paper_bgcolor="#09080f", plot_bgcolor="#09080f",
+        font=dict(family="Inter, sans-serif", color="#8b7fc0", size=12),
+        colorway=["#8b5cf6","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#f97316","#84cc16"],
         xaxis=dict(gridcolor="#1a2744", linecolor="#1a2744", zerolinecolor="#1a2744", tickfont=dict(color="#64748b")),
         yaxis=dict(gridcolor="#1a2744", linecolor="#1a2744", zerolinecolor="#1a2744", tickfont=dict(color="#64748b")),
         legend=dict(bgcolor="rgba(11,17,32,0.8)", bordercolor="#1a2744", borderwidth=1),
@@ -77,27 +75,27 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* =========================================================
-   DESIGN TOKENS — SINGLE DARK THEME
+   DESIGN TOKENS
 ========================================================= */
 
 :root {
-  /* Surface hierarchy — clearly distinct levels */
-  --bg-base:       #080f1e;
-  --bg-surface:    #0d1a2e;
-  --bg-elevated:   #132338;
-  --bg-card:       #0f1e33;
+  /* Surfaces — neutral near-black */
+  --bg-base:       #09080f;
+  --bg-surface:    #0e0c1a;
+  --bg-elevated:   #14111f;
+  --bg-card:       #0d0b14;
 
-  /* Borders — visible but not harsh */
-  --border:        #1e3a5f;
-  --border-subtle: #162d4a;
+  /* Borders */
+  --border:        #1f1c2e;
+  --border-subtle: #17141f;
 
-  /* Brand accent */
-  --accent:        #3b82f6;
-  --accent-dim:    #1d4ed8;
-  --accent-glow:   rgba(59,130,246,0.24);
-  --accent-glow2:  rgba(59,130,246,0.09);
+  /* Accent — PURPLE (replaces blue) */
+  --accent:        #8b5cf6;
+  --accent-dim:    #6d28d9;
+  --accent-glow:   rgba(139,92,246,0.24);
+  --accent-glow2:  rgba(139,92,246,0.09);
 
-  /* Semantic colors */
+  /* Semantic */
   --positive:      #22c55e;
   --positive-dim:  #15803d;
   --positive-glow: rgba(34,197,94,0.18);
@@ -109,11 +107,13 @@ st.markdown("""
   --purple-glow:   rgba(139,92,246,0.18);
   --cyan:          #06b6d4;
   --cyan-glow:     rgba(6,182,212,0.18);
+  --pink:          #ec4899;
+  --pink-glow:     rgba(236,72,153,0.18);
 
-  /* Typography */
-  --text-primary:  #e8f0fe;
-  --text-secondary:#7a98c0;
-  --text-muted:    #3d5a7a;
+  /* Typography — lavender-tinted */
+  --text-primary:  #ede9fe;
+  --text-secondary:#8b7fc0;
+  --text-muted:    #4a4066;
 
   /* Shape */
   --radius:        12px;
@@ -121,22 +121,56 @@ st.markdown("""
   --radius-xs:     5px;
 
   /* Elevation */
-  --shadow:        0 4px 24px rgba(0,0,0,0.55);
-  --shadow-lg:     0 10px 48px rgba(0,0,0,0.65);
-  --shadow-accent: 0 8px 32px rgba(59,130,246,0.22);
+  --shadow:        0 4px 24px rgba(0,0,0,0.6);
+  --shadow-lg:     0 10px 48px rgba(0,0,0,0.7);
+  --shadow-accent: 0 8px 32px rgba(139,92,246,0.22);
+
+  /* Module identity colours */
+  --tab-overview: #8b5cf6;
+  --tab-risk:     #ef4444;
+  --tab-optim:    #f59e0b;
+  --tab-perf:     #22c55e;
+  --tab-asset:    #06b6d4;
+  --tab-enh:      #ec4899;
 }
 
 /* =========================================================
-   TYPE SCALE
-   10px — badges/labels
-   11px — captions/metadata
-   12px — body small / table data
-   13px — body default
-   14px — card titles
-   16px — section values
-   24px — metric numbers
-   28px — page title
+   AURORA BACKGROUND
 ========================================================= */
+
+body {
+  background-color: #09080f !important;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(139,92,246,0.13) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 75%, rgba(109,40,217,0.09) 0%, transparent 50%),
+    radial-gradient(ellipse at 65% 5%,  rgba(236,72,153,0.05)  0%, transparent 40%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.main, .block-container {
+  background: transparent !important;
+  padding-top: 1.25rem !important;
+  max-width: 100% !important;
+}
 
 /* =========================================================
    GLOBAL RESET
@@ -152,18 +186,11 @@ html, body, [class*="css"] {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.main, .block-container {
-  background: var(--bg-base) !important;
-  padding-top: 1.25rem !important;
-}
-
-/* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-/* ── Headings ── */
 h1, h2, h3, h4 {
   font-family: 'Inter', sans-serif !important;
   font-weight: 600 !important;
@@ -176,19 +203,33 @@ h3 { font-size: 0.875rem !important; }
 p, li { color: var(--text-secondary); font-size: 13px; }
 code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !important; }
 
-/* ── Live pulse ── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
   50%       { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34,197,94,0); }
 }
 
 /* =========================================================
-   SIDEBAR
+   SIDEBAR — ICON RAIL WITH HOVER EXPAND
 ========================================================= */
 
+/* Sidebar: fixed width, page shifts naturally */
 [data-testid="stSidebar"] {
-  background: var(--bg-surface) !important;
-  border-right: 1px solid var(--border) !important;
+  background: rgba(14,12,22,0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-right: 1px solid rgba(139,92,246,0.14) !important;
+  width: 220px !important;
+  min-width: 220px !important;
+  max-width: 220px !important;
+}
+
+[data-testid="stSidebarCollapseButton"],
+button[data-testid="collapsedControl"] {
+  display: none !important;
+}
+
+[data-testid="stSidebarContent"] {
+  padding: 12px 8px !important;
 }
 
 /* Sidebar section labels */
@@ -198,8 +239,10 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !imp
   letter-spacing: 0.14em !important;
   text-transform: uppercase !important;
   color: var(--text-muted) !important;
-  padding: 14px 0 6px 2px !important;
+  padding: 14px 0 6px 4px !important;
   display: block !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
 }
 
 .sidebar-divider {
@@ -208,20 +251,70 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !imp
   margin: 6px 0 10px 0 !important;
 }
 
+/* Nav radio styled as icon items */
+
+/* Hide the group label ("Navigation") — Streamlit renders it as stWidgetLabel */
+[data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] [data-testid="stRadio"] > label {
+  display: none !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] > div {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  font-size: 13px !important;
+  color: rgba(148,163,184,0.6) !important;
+  font-weight: 500 !important;
+  border: 1px solid transparent !important;
+  box-sizing: border-box !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+  background: rgba(139,92,246,0.10) !important;
+  color: rgba(237,233,254,0.85) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+  background: rgba(139,92,246,0.18) !important;
+  color: #ede9fe !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(139,92,246,0.28) !important;
+}
+
+/* Hide the native input AND the custom visual radio circle (the div before the text) */
+[data-testid="stSidebar"] [data-testid="stRadio"] input[type="radio"] {
+  display: none !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child {
+  display: none !important;
+}
+
 /* =========================================================
    METRIC CARDS
 ========================================================= */
 
 div[data-testid="stMetric"] {
   background: var(--bg-card) !important;
-  border: 1px solid var(--border-subtle) !important;
+  border: 1px solid rgba(148,163,184,0.09) !important;
   border-top: 2px solid var(--accent) !important;
   border-radius: var(--radius) !important;
-  padding: 18px 20px 16px !important;
-  min-height: 108px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: space-between !important;
+  padding: 16px 18px 14px !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease !important;
   box-shadow: var(--shadow) !important;
   position: relative !important;
@@ -238,16 +331,15 @@ div[data-testid="stMetric"]::after {
 }
 
 div[data-testid="stMetric"]:hover {
-  transform: translateY(-3px) !important;
+  transform: translateY(-2px) !important;
   box-shadow: var(--shadow-accent) !important;
 }
 
 div[data-testid="stMetricValue"] {
-  font-size: 1.65rem !important;
+  font-size: 1.5rem !important;
   font-weight: 700 !important;
   color: var(--text-primary) !important;
   letter-spacing: -0.04em !important;
-  font-family: 'Inter', sans-serif !important;
   line-height: 1.1 !important;
 }
 
@@ -257,51 +349,10 @@ div[data-testid="stMetricLabel"] > div {
   text-transform: uppercase !important;
   letter-spacing: 0.11em !important;
   color: var(--text-muted) !important;
-  margin-bottom: 6px !important;
+  margin-bottom: 4px !important;
 }
 
-div[data-testid="stMetricDelta"] {
-  font-size: 12px !important;
-  font-weight: 600 !important;
-}
-
-/* =========================================================
-   TABS
-========================================================= */
-
-.stTabs [data-baseweb="tab-list"] {
-  gap: 2px !important;
-  background: var(--bg-surface) !important;
-  padding: 4px !important;
-  border-radius: var(--radius) !important;
-  border: 1px solid var(--border) !important;
-  margin-bottom: 1.75rem !important;
-  box-shadow: var(--shadow) !important;
-}
-
-.stTabs [data-baseweb="tab"] {
-  border-radius: var(--radius-sm) !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  padding: 8px 16px !important;
-  color: var(--text-muted) !important;
-  transition: all 0.16s ease !important;
-  letter-spacing: 0.01em !important;
-  border-bottom: none !important;
-}
-
-.stTabs [data-baseweb="tab"]:hover {
-  color: var(--text-secondary) !important;
-  background: var(--bg-elevated) !important;
-}
-
-.stTabs [aria-selected="true"] {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%) !important;
-  color: #ffffff !important;
-  font-weight: 600 !important;
-  box-shadow: 0 4px 16px var(--accent-glow) !important;
-  border-bottom: none !important;
-}
+div[data-testid="stMetricDelta"] { font-size: 12px !important; font-weight: 600 !important; }
 
 /* =========================================================
    TABLES & DATAFRAMES
@@ -387,17 +438,12 @@ div[data-testid="stMetricDelta"] {
   box-shadow: 0 0 0 3px var(--accent-glow2) !important;
 }
 
-/* Sliders */
 .stSlider > div > div > div > div {
   background: linear-gradient(90deg, var(--accent), var(--accent-dim)) !important;
 }
 
-/* File uploader */
-.stFileUploader {
-  border-radius: var(--radius) !important;
-}
+.stFileUploader { border-radius: var(--radius) !important; }
 
-/* Expanders */
 .streamlit-expanderHeader {
   background: var(--bg-surface) !important;
   border: 1px solid var(--border) !important;
@@ -491,6 +537,27 @@ def slice_tf(data, tf):
 def quick_chart(fig, height=320):
     fig.update_layout(height=height, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
+
+
+def card_header(title: str, colour: str = "var(--text-muted)") -> None:
+    st.markdown(
+        f'<div style="font-size:10px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.08em;color:{colour};margin-bottom:12px;">{title}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def metric_chip(label: str, value: str, colour: str = "var(--text-primary)", sub: str = "") -> None:
+    sub_html = (f'<div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">{sub}</div>'
+                if sub else "")
+    st.markdown(f"""
+    <div style="padding:16px 20px;background:var(--bg-card);border:1px solid var(--border);
+         border-top:2px solid {colour};border-radius:var(--radius);margin-bottom:8px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+           letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">{label}</div>
+      <div style="font-size:28px;font-weight:700;color:{colour};line-height:1;">{value}</div>
+      {sub_html}
+    </div>""", unsafe_allow_html=True)
 
 def stat_banner(items, accent="#3b82f6"):
     """Render a horizontal banner of (label, value) pairs.
@@ -791,9 +858,9 @@ st.markdown("""
     border:1px solid var(--border);box-shadow:var(--shadow-lg);">
   <div style="display:flex;align-items:center;gap:18px;">
     <div style="width:52px;height:52px;border-radius:14px;flex-shrink:0;position:relative;
-        background:linear-gradient(135deg,#1d4ed8 0%,#3b82f6 55%,#60a5fa 100%);
+        background:linear-gradient(135deg,#6d28d9 0%,#8b5cf6 55%,#a78bfa 100%);
         display:flex;align-items:center;justify-content:center;font-size:24px;
-        box-shadow:0 6px 28px rgba(59,130,246,0.55);">
+        box-shadow:0 6px 28px rgba(139,92,246,0.55);">
       📈
       <div style="position:absolute;inset:0;border-radius:14px;
           background:linear-gradient(135deg,rgba(255,255,255,0.18),transparent);"></div>
@@ -1084,23 +1151,21 @@ def cached_sec_insider(ticker):              return sec_insider_transactions(tic
 @st.cache_data(ttl=1800,  show_spinner=False)
 def cached_wsb(tickers):                     return wsb_sentiment(list(tickers))
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_liquidity_risk(tickers_tuple, quantities_tuple, market_values_tuple):
-    holdings_mini = pd.DataFrame({
-        "Ticker":       list(tickers_tuple),
-        "Quantity":     list(quantities_tuple),
-        "Market Value": list(market_values_tuple),
-    })
-    return compute_liquidity_risk(holdings_mini)
+@st.cache_data(ttl=3600,  show_spinner=False)
+def cached_liquidity_risk(tickers, quantities, market_values):
+    import pandas as pd
+    holdings_df = pd.DataFrame({"Ticker": list(tickers), "Quantity": list(quantities), "Market Value": list(market_values)})
+    return compute_liquidity_risk(holdings_df)
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def cached_stress_tests(tickers_tuple, weights_tuple):
-    weights = pd.Series(dict(zip(tickers_tuple, weights_tuple)))
-    return run_stress_tests(weights)
+def cached_stress_tests(tickers, weights):
+    import pandas as pd
+    weights_series = pd.Series(list(weights), index=list(tickers))
+    return run_stress_tests(weights_series)
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def cached_dividend_data(ticker, quantity, current_price):
-    return get_dividend_data(ticker, float(quantity), float(current_price))
+    return get_dividend_data(ticker, quantity, current_price)
 
 
 # ==========================================================
@@ -1109,7 +1174,7 @@ def cached_dividend_data(ticker, quantity, current_price):
 
 @st.cache_data(show_spinner=False)
 def detect_vol_regime(returns, window=60):
-    rv = (returns.rolling(window).std() * np.sqrt(TRADING_DAYS)).dropna()
+    rv = (returns.rolling(window).std() * np.sqrt(252)).dropna()
     if rv.empty: return "N/A", "#64748b", 0.0
     latest, pct = float(rv.iloc[-1]), float(rv.rank(pct=True).iloc[-1])
     return ("LOW VOL","#22c55e",latest) if pct<.33 else ("NORMAL VOL","#f59e0b",latest) if pct<.66 else ("HIGH VOL","#ef4444",latest)
@@ -1121,72 +1186,34 @@ def detect_vol_regime(returns, window=60):
 
 with st.sidebar:
     st.markdown("""
-    <div style="padding:18px 4px 14px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px;">
-      <div style="font-size:15px;font-weight:700;color:var(--text-primary);
-          letter-spacing:-0.02em;">Portfolio Analyser</div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:3px;
-          text-transform:uppercase;letter-spacing:0.1em;">Configuration</div>
+    <div style="padding:14px 4px 12px;border-bottom:1px solid var(--border-subtle);margin-bottom:8px;">
+      <div style="font-size:20px;margin-bottom:4px;">📈</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text-primary);
+          letter-spacing:-0.02em;white-space:nowrap;overflow:hidden;">Portfolio Analyser</div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── NAVIGATION ─────────────────────────────────────────
+    _active_module = st.radio(
+        "Navigation",
+        options=["overview", "risk", "optimization", "performance", "asset_analytics", "enhancement"],
+        format_func=lambda x: {
+            "overview":        "📊  Overview",
+            "risk":            "⚠️  Risk",
+            "optimization":    "🎯  Optimization",
+            "performance":     "📈  Performance",
+            "asset_analytics": "🔍  Asset Analytics",
+            "enhancement":     "✨  Enhancement",
+        }[x],
+        key="_active_module",
+        label_visibility="collapsed",
+    )
+
+    st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
+
     # ── DATA ───────────────────────────────────────────────
-    st.markdown('<span class="sidebar-group-label">Data</span>', unsafe_allow_html=True)
+    st.markdown('<span class="sidebar-group-label">Portfolio</span>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Upload Portfolio CSV", type="csv", label_visibility="collapsed")
-
-    # ── BENCHMARK & PROFILE ────────────────────────────────
-    st.markdown('<hr class="sidebar-divider"><span class="sidebar-group-label">Market Settings</span>', unsafe_allow_html=True)
-    benchmark_map = {
-        "S&P 500":   "^GSPC",
-        "NIFTY 50":  "^NSEI",
-        "NIFTY 500": "^CRSLDX",
-        "SENSEX":    "^BSESN",
-        "Dow Jones": "^DJI",
-        "NASDAQ":    "^IXIC",
-        "Custom…":   None,
-    }
-    benchmark_name = st.selectbox("Benchmark", list(benchmark_map.keys()))
-
-    if benchmark_name == "Custom…":
-        _custom_input = st.text_input(
-            "Enter ticker symbol",
-            value=st.session_state.get("custom_benchmark", ""),
-            placeholder="e.g. QQQ, URTH, ^FTSE",
-            help="Any ticker supported by Yahoo Finance — indices (^), ETFs, or stocks",
-        ).strip().upper()
-
-        if _custom_input:
-            if _custom_input != st.session_state.get("_last_custom_checked"):
-                with st.spinner(f"Validating {_custom_input}…"):
-                    try:
-                        _test  = yf.Ticker(_custom_input).fast_info
-                        _valid = hasattr(_test, "last_price") and _test.last_price is not None
-                    except Exception:
-                        _valid = False
-                st.session_state["_last_custom_checked"] = _custom_input
-                st.session_state["_custom_valid"]        = _valid
-                if _valid:
-                    st.session_state["custom_benchmark"] = _custom_input
-
-            if st.session_state.get("_custom_valid", False):
-                st.success(f"✓ {st.session_state['custom_benchmark']}")
-                benchmark = st.session_state["custom_benchmark"]
-            else:
-                st.error("Ticker not found on Yahoo Finance")
-                benchmark = st.session_state.get("custom_benchmark", "^GSPC")
-        else:
-            benchmark = st.session_state.get("custom_benchmark", "^GSPC")
-    else:
-        benchmark = benchmark_map[benchmark_name]
-        st.session_state.pop("custom_benchmark",      None)
-        st.session_state.pop("_last_custom_checked",  None)
-        st.session_state.pop("_custom_valid",         None)
-
-    risk_profile = st.selectbox("Risk Profile", list(RISK_PROFILES.keys()))
-
-    # ── REBALANCING ────────────────────────────────────────
-    st.markdown('<hr class="sidebar-divider"><span class="sidebar-group-label">Rebalancing</span>', unsafe_allow_html=True)
-    threshold_pct  = st.slider("Rebalance Threshold (%)", 0.0, 10.0,  2.0, 0.1)
-    max_weight_pct = st.slider("Max Position Size (%)",   5.0, 50.0, 15.0, 1.0)
 
 px.defaults.template = "portfolio_dark"
 
@@ -1198,9 +1225,11 @@ except Exception:
     _FINNHUB_KEY = "d6ljirpr01qrq6i31170d6ljirpr01qrq6i3117g"
     _FRED_KEY    = "1887e2a54d8ecf8a37c4df1799d4b3bb"
 
-threshold        = threshold_pct        / 100
-max_weight       = max_weight_pct       / 100
-lookback         = "max"
+benchmark      = st.session_state.get("benchmark", "^GSPC")
+risk_profile   = "Moderate"
+max_weight_pct = st.session_state.get("max_weight_pct", 15.0)
+max_weight     = max_weight_pct / 100
+lookback       = "max"
 
 if uploaded_file is None:
     st.session_state.pop("data_loaded",    None)
@@ -1210,9 +1239,9 @@ if uploaded_file is None:
 
       <!-- Icon -->
       <div style="width:76px;height:76px;margin:0 auto 24px;border-radius:20px;
-          background:linear-gradient(135deg,#1d4ed8,#3b82f6);
+          background:linear-gradient(135deg,#6d28d9,#8b5cf6);
           display:flex;align-items:center;justify-content:center;font-size:36px;
-          box-shadow:0 8px 36px rgba(59,130,246,0.45);position:relative;">
+          box-shadow:0 8px 36px rgba(139,92,246,0.45);position:relative;">
         📊
         <div style="position:absolute;inset:0;border-radius:20px;
             background:linear-gradient(135deg,rgba(255,255,255,0.18),transparent);"></div>
@@ -1236,13 +1265,12 @@ if uploaded_file is None:
         <div style="font-family:'JetBrains Mono','DM Mono',monospace;font-size:12px;
             color:var(--text-secondary);line-height:2;background:var(--bg-elevated);
             border-radius:var(--radius-sm);padding:14px 16px;border:1px solid var(--border-subtle);">
-          <span style="color:var(--text-muted);">Ticker, Date, Action, Quantity</span><br>
-          AAPL, 2023-01-15, <span style="color:#22c55e;">Buy</span>, 10<br>
-          MSFT, 2023-02-10, <span style="color:#22c55e;">Buy</span>, 5<br>
-          AAPL, 2024-06-01, <span style="color:#ef4444;">Sell</span>, 3
+          <span style="color:var(--text-muted);">Ticker, Date, Action, Quantity, Price</span><br>
+          AAPL, 2023-01-15, <span style="color:#22c55e;">Buy</span>, 10, 135.20<br>
+          MSFT, 2023-02-10, <span style="color:#22c55e;">Buy</span>, 5, 252.75<br>
+          AAPL, 2024-06-01, <span style="color:#ef4444;">Sell</span>, 3, 189.50
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6;">
-          Prices are auto-fetched from Yahoo Finance using the closing price on each transaction date — no Price column needed.
           Indian stocks: append <strong style="color:var(--accent);">.NS</strong> (NSE) or
           <strong style="color:var(--accent);">.BO</strong> (BSE) to the ticker.
           Headers are flexible — column names are auto-detected.
@@ -1492,10 +1520,10 @@ with col_pdf:
                 enhancements_pdf = None
             pdf_bytes = generate_portfolio_pdf(
                 df, risk_summary, weights_series, optimal_weights,
-                curr_ret  = weights_series @ (returns.mean() * TRADING_DAYS),
-                curr_vol  = float(np.sqrt(weights_series @ (returns.cov() * TRADING_DAYS) @ weights_series)),
-                opt_ret   = float(optimal_weights @ (returns.mean() * TRADING_DAYS)) if optimal_weights is not None else 0,
-                opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov() * TRADING_DAYS) @ optimal_weights)) if optimal_weights is not None else 0,
+                curr_ret  = weights_series @ (returns.mean() * 252),
+                curr_vol  = float(np.sqrt(weights_series @ (returns.cov() * 252) @ weights_series)),
+                opt_ret   = float(optimal_weights @ (returns.mean() * 252)) if optimal_weights is not None else 0,
+                opt_vol   = float(np.sqrt(optimal_weights @ (returns.cov() * 252) @ optimal_weights)) if optimal_weights is not None else 0,
                 opt_method        = opt_method,
                 health_score      = health_score,
                 portfolio_returns = portfolio_returns,
@@ -1515,100 +1543,119 @@ with col_pdf:
 
 
 # ==========================================================
-# TABS
+# MODULE ROUTER
 # ==========================================================
 
-tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
-    "📊  Overview",
-    "⚠️  Risk",
-    "🎯  Optimization",
-    "📈  Performance",
-    "🔍  Asset Analytics",
-    "✨  Enhancement",
-])
+_module = st.session_state.get("_active_module", "overview")
 
 
-# ── TAB 1: OVERVIEW ────────────────────────────────────────
-with tab1:
-    stat_banner([
-        ("Volatility Regime", regime),
-        ("Current Vol",       f"{latest_vol:.1%}"),
-        ("Health Score",      health_score),
-    ], accent=regime_color)
+# ── MODULE: OVERVIEW ───────────────────────────────────────
+if _module == "overview":
 
-    section_header("Key Metrics")
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("Portfolio Value", f"{_currency}{total_value:,.0f}")
-    c2.metric("Sharpe Ratio",    f"{risk_summary['Sharpe Ratio']:.2f}")
-    c3.metric("Volatility",      f"{risk_summary['Volatility']:.2%}")
-    c4.metric("Max Drawdown",    f"{risk_summary['Max Drawdown']:.2%}")
-    c5.metric("Beta",            f"{risk_summary.get('Beta',0):.2f}")
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:var(--accent);text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Overview</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Portfolio Dashboard</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-    section_header("Returns & P/L")
-    cA, cB, cC, cD = st.columns(4)
-    xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr and not np.isnan(portfolio_xirr) else "N/A"
-    cA.metric("XIRR (Portfolio)", xirr_display)
-    cB.metric("Amount Invested",  f"{_currency}{amount_invested:,.0f}")
-    unreal_pct = (unrealized_gain / amount_invested) if amount_invested > 0 else None
-    cC.metric("Unrealised P/L",   f"{_currency}{unrealized_gain:,.0f}",
-              delta=f"{unreal_pct:.2%}" if unreal_pct is not None else None)
-    cD.metric("Realised P/L",     f"{_currency}{realised_gain:,.0f}")
+    # ── Stat row ────────────────────────────────────────────
+    _unreal_pct = (unrealized_gain / amount_invested) if amount_invested > 0 else 0.0
+    _xirr_display = f"{portfolio_xirr:.2%}" if portfolio_xirr and not np.isnan(portfolio_xirr) else "N/A"
+    _max_dd = float(drawdown_series.min()) if not drawdown_series.empty else 0.0
+    _s1, _s2, _s3, _s4 = st.columns(4)
+    _s1.metric("Total Value",   f"{_currency}{total_value:,.0f}",
+               f"Invested {_currency}{amount_invested:,.0f}")
+    _s2.metric("Total Return",  f"{_unreal_pct:+.2%}",
+               f"{_currency}{unrealized_gain:+,.0f}")
+    _s3.metric("Health Score",  f"{health_score:.0f}/100",
+               f"XIRR {_xirr_display}")
+    _s4.metric("Max Drawdown",  f"{_max_dd:.2%}")
 
-    _ov_tf = st.radio("Timeframe", ["1M","3M","6M","1Y","3Y","5Y"], horizontal=True,
-                      index=3, key="overview_tf", label_visibility="collapsed")
+    # ── Primary chart: Portfolio Composition Treemap ────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid var(--tab-overview);border-radius:var(--radius);'
+        'padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("PORTFOLIO COMPOSITION", colour="var(--tab-overview)")
+    _tm_df = df[["Ticker", "Market Value", "Unrealised P/L", "P/L %", "Sector"]].copy()
+    _tm_df["P/L % Label"] = _tm_df["P/L %"].map(lambda x: f"{x:+.2%}" if pd.notna(x) else "N/A")
+    _tm_df["colour"] = _tm_df["P/L %"].apply(
+        lambda x: x if pd.notna(x) else 0.0
+    )
+    _tm_fig = px.treemap(
+        _tm_df,
+        path=[px.Constant("Portfolio"), "Sector", "Ticker"],
+        values="Market Value",
+        color="colour",
+        color_continuous_scale=["#ef4444", "#1e1e2e", "#22c55e"],
+        color_continuous_midpoint=0,
+        custom_data=["P/L % Label", "Unrealised P/L"],
+    )
+    _tm_fig.update_traces(
+        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+        hovertemplate="<b>%{label}</b><br>Value: %{value:,.0f}<br>P/L: %{customdata[0]}<extra></extra>",
+        marker=dict(line=dict(width=1.5, color="#09080f")),
+    )
+    _tm_fig.update_layout(
+        height=360, margin=dict(l=0, r=0, t=0, b=0),
+        coloraxis_showscale=False,
+    )
+    st.plotly_chart(_tm_fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    _ov_c1, _ov_c2 = st.columns(2)
-    with _ov_c1:
-        section_header("Performance History")
-        _cum_full = (1 + portfolio_returns.dropna()).cumprod()
-        _cum      = slice_tf(_cum_full, _ov_tf)
-        if _cum.empty:
-            _cum = _cum_full
-        _cum      = _cum / _cum.iloc[0] - 1
-        _perf_df  = pd.DataFrame({"Portfolio": _cum})
-        if benchmark_returns is not None:
-            _bc_full = (1 + benchmark_returns.dropna()).cumprod()
-            _bc      = slice_tf(_bc_full, _ov_tf).reindex(_cum.index, method="ffill")
-            if not _bc.empty:
-                _bc = _bc / _bc.iloc[0] - 1
-                _perf_df["Benchmark"] = _bc
-        _fig_perf = px.line(_perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
-        _fig_perf.update_traces(line=dict(width=1.8))
-        quick_chart(_fig_perf, 260)
+    # ── Secondary grid: Sector Allocation | Asset Allocation ─
+    _r2c1, _r2c2 = st.columns(2)
 
-    with _ov_c2:
-        section_header("Drawdown")
-        _dd_sliced = slice_tf(drawdown_series, _ov_tf)
-        fig_dd = px.area(_dd_sliced, color_discrete_sequence=["#ef4444"])
-        fig_dd.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.12)")
-        quick_chart(fig_dd, 260)
-
-    section_header("Allocation")
-    cX, cY = st.columns(2)
-    with cX:
-        at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
-        if not at.empty:
-            fig = px.pie(at, names="Asset Type", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18", width=2)))
-            fig.update_layout(title=dict(text="Asset Allocation",x=0.5), height=380,
-                              margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
-            st.plotly_chart(fig, use_container_width=True)
+    with _r2c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("SECTOR ALLOCATION", colour="var(--tab-overview)")
+        _sec_alloc = df.groupby("Sector")["Market Value"].sum().reset_index()
+        if not _sec_alloc.empty:
+            _sec_fig = px.pie(_sec_alloc, names="Sector", values="Market Value", hole=0.55)
+            _sec_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
+            _sec_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                   legend=dict(orientation="v", x=1.02))
+            st.plotly_chart(_sec_fig, use_container_width=True)
         else:
-            empty_state("📦","Asset type data unavailable","Could not classify asset types")
+            empty_state("🏭", "Sector data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with cY:
-        sa = df[df["Sector"]!="Unknown"].groupby("Sector")["Market Value"].sum().reset_index()
-        if not sa.empty:
-            fig = px.pie(sa, names="Sector", values="Market Value", hole=0.65)
-            fig.update_traces(textfont_size=12, marker=dict(line=dict(color="#080d18", width=2)))
-            fig.update_layout(title=dict(text="Sector Allocation",x=0.5), height=380,
-                              margin=dict(l=20,r=20,t=40,b=20), legend=dict(orientation="v",x=1.02))
-            st.plotly_chart(fig, use_container_width=True)
+    with _r2c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("ASSET ALLOCATION", colour="var(--tab-overview)")
+        _at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
+        if not _at.empty:
+            _at_fig = px.pie(_at, names="Asset Type", values="Market Value", hole=0.55)
+            _at_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
+            _at_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                  legend=dict(orientation="v", x=1.02))
+            st.plotly_chart(_at_fig, use_container_width=True)
         else:
-            empty_state("🏭","Sector data unavailable","Could not classify tickers into sectors")
+            empty_state("📦", "Asset type data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    section_header("Holdings")
+    # ── Holdings ────────────────────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("HOLDINGS")
     cached_count = df["_Price Cached"].sum() if "_Price Cached" in df.columns else 0
     if cached_count > 0:
         st.warning(f"⏱️ {cached_count} price(s) using cached values. Refresh to update.", icon="⏱️")
@@ -1632,52 +1679,105 @@ with tab1:
         "P/L %":         "{:.2%}",
     })
     st.dataframe(styled, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ── MODULE: RISK ───────────────────────────────────────────
+elif _module == "risk":
 
-# ── TAB 2: RISK ────────────────────────────────────────────
-with tab2:
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:#ef4444;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Risk</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Risk Management</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-    # ── Risk Summary ───────────────────────────────────────
-    section_header("Risk Summary", color="var(--negative)")
-    pct_fields = {"Annual Return","Volatility","Max Drawdown","VaR 95%","CVaR 95%","Tracking Error","Correlation"}
-    st.table(pd.DataFrame({k: f"{v:.2%}" if k in pct_fields else f"{v:.2f}"
-                            for k,v in risk_summary.items()}.items(), columns=["Metric","Value"]))
+    # ── Timeframe selector ──────────────────────────────────
+    _risk_tf = st.radio("Timeframe", ["1Y","3Y","5Y"], horizontal=True,
+                        key="risk_tf_hero", label_visibility="collapsed")
 
-    # ── Macro Environment ───────────────────────────────────
-    section_header("Macro Environment", color="var(--warning)")
-    if _market == "IN":
-        _macro = cached_india_macro(_FRED_KEY)
-    else:
-        _macro = cached_fred_macro(_FRED_KEY) if _FRED_KEY else {}
-    if _macro:
-        _mcols = st.columns(len(_macro))
-        for _col, (_mname, _md) in zip(_mcols, _macro.items()):
-            _delta_str = f"{_md['delta']:+.3f}" if _md.get("delta") is not None else None
-            _col.metric(_mname, _md["display"], delta=_delta_str,
-                        help=f"As of {_md['date']}")
-    else:
-        empty_state("📊", "Macro data unavailable", "Could not fetch macro indicators")
+    # Pre-compute values
+    _vc_chip = var_cvar_summary(portfolio_returns)
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    # ── Stat row ────────────────────────────────────────────
+    _max_dd_risk = float(drawdown_series.min()) if not drawdown_series.empty else 0.0
+    _rs1, _rs2, _rs3, _rs4 = st.columns(4)
+    _rs1.metric("VaR 95% (Hist.)", f"{_vc_chip['hist_var_95']:.2%}", help="Daily loss at 95% confidence")
+    _rs2.metric("Max Drawdown",    f"{_max_dd_risk:.2%}")
+    _rs3.metric("Volatility (Ann.)",f"{risk_summary['Volatility']:.2%}")
+    _rs4.metric("Sharpe Ratio",    f"{risk_summary['Sharpe Ratio']:.2f}")
 
-    # ── Rolling charts ─────────────────────────────────────
-    c1, c2 = st.columns(2)
-    with c1:
-        section_header("Rolling Volatility", color="var(--warning)")
-        tf = st.radio("Timeframe",["1Y","3Y","5Y"],horizontal=True,key="vol_tf",label_visibility="collapsed")
-        quick_chart(px.line(slice_tf(rolling_volatility(portfolio_returns), tf),
-                            color_discrete_sequence=["#3b82f6"]))
-    with c2:
+    # ── Primary chart: full-width rolling volatility ────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("ROLLING 60-DAY VOLATILITY", colour="#ef4444")
+    _vol_fig = px.line(
+        slice_tf(rolling_volatility(portfolio_returns), _risk_tf),
+        color_discrete_sequence=["#ef4444"],
+    )
+    _vol_fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0),
+                           yaxis=dict(tickformat=".1%"), hovermode="x unified")
+    st.plotly_chart(_vol_fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 2: Risk Summary + Macro ───────────────────────
+    _r2c1, _r2c2 = st.columns(2)
+
+    with _r2c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("RISK SUMMARY", colour="#ef4444")
+        pct_fields = {"Annual Return","Volatility","Max Drawdown","VaR 95%","CVaR 95%","Tracking Error","Correlation"}
+        st.table(pd.DataFrame({k: f"{v:.2%}" if k in pct_fields else f"{v:.2f}"
+                                for k,v in risk_summary.items()}.items(), columns=["Metric","Value"]))
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r2c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("MACRO ENVIRONMENT", colour="var(--warning)")
+        if _market == "IN":
+            _macro = cached_india_macro(_FRED_KEY)
+        else:
+            _macro = cached_fred_macro(_FRED_KEY) if _FRED_KEY else {}
+        if _macro:
+            _mcols = st.columns(len(_macro))
+            for _col, (_mname, _md) in zip(_mcols, _macro.items()):
+                _delta_str = f"{_md['delta']:+.3f}" if _md.get("delta") is not None else None
+                _col.metric(_mname, _md["display"], delta=_delta_str,
+                            help=f"As of {_md['date']}")
+        else:
+            empty_state("📊", "Macro data unavailable", "Could not fetch macro indicators")
+
+        card_header("ROLLING BENCHMARK CORRELATION", colour="#ef4444")
         if benchmark_returns is not None:
-            section_header("Rolling Benchmark Correlation")
-            tf = st.radio("Timeframe",["1Y","3Y","5Y"],horizontal=True,key="corr_tf",label_visibility="collapsed")
-            quick_chart(px.line(slice_tf(rolling_correlation(portfolio_returns,benchmark_returns), tf),
-                                color_discrete_sequence=["#f59e0b"]))
+            _corr_tf = st.radio("Timeframe",["1Y","3Y","5Y"],horizontal=True,
+                                key="corr_tf",label_visibility="collapsed")
+            quick_chart(px.line(slice_tf(rolling_correlation(portfolio_returns,benchmark_returns), _corr_tf),
+                                color_discrete_sequence=["#f59e0b"]), 220)
         else:
             empty_state("📉","No benchmark data","Benchmark returns could not be fetched")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Stress Testing ─────────────────────────────────────
-    section_header("Historical Stress Tests", color="var(--negative)")
+    # ── Row 3: Stress Tests ────────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("HISTORICAL STRESS TESTS", colour="#ef4444")
     with st.spinner("Running stress scenarios…"):
         _stress_df = cached_stress_tests(
             tickers_tuple,
@@ -1689,9 +1789,9 @@ with tab2:
             def _fmt_pct(v):
                 return f"{v:.2%}" if v is not None and not (isinstance(v, float) and np.isnan(v)) else "N/A"
             _col.markdown(f"""
-            <div style="background:var(--bg-card);border:1px solid var(--border);
-                border-top:2px solid var(--negative);border-radius:var(--radius);
-                padding:16px;text-align:center;">
+            <div style="background:var(--bg-elevated);border:1px solid var(--border);
+                border-top:2px solid #ef4444;border-radius:var(--radius);
+                padding:16px;text-align:center;margin-bottom:8px;">
               <div style="font-size:10px;font-weight:700;text-transform:uppercase;
                   letter-spacing:0.1em;color:var(--text-muted);margin-bottom:12px;">
                 {_srow['Scenario']}</div>
@@ -1715,222 +1815,176 @@ with tab2:
             </div>""", unsafe_allow_html=True)
     else:
         empty_state("📉", "Stress test data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── VaR / CVaR ─────────────────────────────────────────
-    section_header("Value at Risk & Expected Shortfall", color="var(--negative)")
+    # ── Row 4: VaR + Return Distribution | Liquidity ───────
+    _r4c1, _r4c2 = st.columns(2)
 
-    _vc = var_cvar_summary(portfolio_returns)
-
-    # Metric cards — 4 columns, 95% and 99%
-    v1,v2,v3,v4 = st.columns(4)
-    v1.metric("Hist. VaR 95%",   f"{_vc['hist_var_95']:.2%}",  help="Worst daily loss exceeded on 5% of trading days (historical)")
-    v2.metric("Hist. CVaR 95%",  f"{_vc['hist_cvar_95']:.2%}", help="Average loss on the worst 5% of days (Expected Shortfall)")
-    v3.metric("Hist. VaR 99%",   f"{_vc['hist_var_99']:.2%}",  help="Worst daily loss exceeded on 1% of trading days (historical)")
-    v4.metric("Hist. CVaR 99%",  f"{_vc['hist_cvar_99']:.2%}", help="Average loss on the worst 1% of days (Expected Shortfall)")
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    v5,v6,v7,v8 = st.columns(4)
-    v5.metric("Param. VaR 95%",  f"{_vc['param_var_95']:.2%}",  help="Gaussian VaR 95% — assumes normally distributed returns")
-    v6.metric("Param. CVaR 95%", f"{_vc['param_cvar_95']:.2%}", help="Gaussian CVaR 95%")
-    v7.metric("Param. VaR 99%",  f"{_vc['param_var_99']:.2%}",  help="Gaussian VaR 99%")
-    v8.metric("Param. CVaR 99%", f"{_vc['param_cvar_99']:.2%}", help="Gaussian CVaR 99%")
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # Return distribution chart with VaR/CVaR overlays
-    section_header("Return Distribution")
-    _ret_clean = portfolio_returns.dropna()
-    _hist_fig  = go.Figure()
-
-    # Histogram of daily returns
-    _hist_fig.add_trace(go.Histogram(
-        x=_ret_clean, nbinsx=80, name="Daily Returns",
-        marker_color="#3b82f6", opacity=0.6,
-        hovertemplate="Return: %{x:.2%}<br>Count: %{y}<extra></extra>",
-    ))
-
-    # Overlay normal distribution curve
-    import scipy.stats as _stats
-    _mu, _sigma = _ret_clean.mean(), _ret_clean.std()
-    _x_range = np.linspace(_ret_clean.min(), _ret_clean.max(), 300)
-    _pdf     = _stats.norm.pdf(_x_range, _mu, _sigma)
-    _scale   = len(_ret_clean) * (_ret_clean.max() - _ret_clean.min()) / 80
-    _hist_fig.add_trace(go.Scatter(
-        x=_x_range, y=_pdf * _scale, name="Normal Fit",
-        line=dict(color="#94a3b8", width=2, dash="dot"),
-        hovertemplate="Return: %{x:.2%}<extra>Normal Fit</extra>",
-    ))
-
-    # VaR lines
-    for _label, _val, _color in [
-        ("VaR 95%",  _vc["hist_var_95"],  "#f59e0b"),
-        ("CVaR 95%", _vc["hist_cvar_95"], "#ef4444"),
-        ("VaR 99%",  _vc["hist_var_99"],  "#8b5cf6"),
-    ]:
-        _hist_fig.add_vline(
-            x=_val, line_dash="dash", line_color=_color, line_width=1.5,
-            annotation_text=f"{_label}: {_val:.2%}",
-            annotation_position="top left",
-            annotation_font=dict(size=10, color=_color),
+    with _r4c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
         )
+        card_header("VALUE AT RISK & EXPECTED SHORTFALL", colour="#ef4444")
+        _vc = _vc_chip
+        _v1,_v2,_v3,_v4 = st.columns(4)
+        _v1.metric("Hist. VaR 95%",   f"{_vc['hist_var_95']:.2%}")
+        _v2.metric("Hist. CVaR 95%",  f"{_vc['hist_cvar_95']:.2%}")
+        _v3.metric("Hist. VaR 99%",   f"{_vc['hist_var_99']:.2%}")
+        _v4.metric("Hist. CVaR 99%",  f"{_vc['hist_cvar_99']:.2%}")
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        _v5,_v6,_v7,_v8 = st.columns(4)
+        _v5.metric("Param. VaR 95%",  f"{_vc['param_var_95']:.2%}")
+        _v6.metric("Param. CVaR 95%", f"{_vc['param_cvar_95']:.2%}")
+        _v7.metric("Param. VaR 99%",  f"{_vc['param_var_99']:.2%}")
+        _v8.metric("Param. CVaR 99%", f"{_vc['param_cvar_99']:.2%}")
 
-    _hist_fig.update_layout(
-        height=340, margin=dict(l=0,r=0,t=10,b=0),
-        xaxis=dict(tickformat=".1%", title="Daily Return"),
-        yaxis_title="Frequency",
-        showlegend=True,
-        bargap=0.05,
+        card_header("RETURN DISTRIBUTION")
+        _ret_clean = portfolio_returns.dropna()
+        _hist_fig  = go.Figure()
+        _hist_fig.add_trace(go.Histogram(
+            x=_ret_clean, nbinsx=80, name="Daily Returns",
+            marker_color="#8b5cf6", opacity=0.6,
+            hovertemplate="Return: %{x:.2%}<br>Count: %{y}<extra></extra>",
+        ))
+        import scipy.stats as _stats
+        _mu, _sigma = _ret_clean.mean(), _ret_clean.std()
+        _x_range = np.linspace(_ret_clean.min(), _ret_clean.max(), 300)
+        _pdf     = _stats.norm.pdf(_x_range, _mu, _sigma)
+        _scale   = len(_ret_clean) * (_ret_clean.max() - _ret_clean.min()) / 80
+        _hist_fig.add_trace(go.Scatter(
+            x=_x_range, y=_pdf * _scale, mode="lines", name="Normal Fit",
+            line=dict(color="#f59e0b", width=2),
+            hovertemplate="Return: %{x:.2%}<extra></extra>",
+        ))
+        for _var_lvl, _cval, _lbl in [
+            (_vc["hist_var_95"],   "#ef4444", "VaR 95%"),
+            (_vc["hist_cvar_95"],  "#7f1d1d", "CVaR 95%"),
+        ]:
+            _hist_fig.add_vline(x=_var_lvl, line=dict(color=_cval, width=2, dash="dash"),
+                                annotation_text=_lbl, annotation_font_color=_cval,
+                                annotation_position="top left")
+        _hist_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                xaxis=dict(tickformat=".1%"), bargap=0.05)
+        st.plotly_chart(_hist_fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r4c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("LIQUIDITY RISK", colour="var(--warning)")
+        with st.spinner("Fetching liquidity data…"):
+            _liq_df = cached_liquidity_risk(
+                tickers_tuple,
+                tuple(df.set_index("Ticker")["Quantity"].reindex(tickers).fillna(0).values),
+                tuple(df.set_index("Ticker")["Market Value"].reindex(tickers).fillna(0).values),
+            )
+        if not _liq_df.empty:
+            st.dataframe(_liq_df, use_container_width=True)
+        else:
+            empty_state("💧", "Liquidity data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 5: Concentration & Diversification ─────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
     )
-    st.plotly_chart(_hist_fig, use_container_width=True)
-
-    # ── Liquidity Risk ─────────────────────────────────────
-    section_header("Liquidity Risk", color="var(--warning)")
-    with st.spinner("Fetching volume data…"):
-        _liq_df = cached_liquidity_risk(
-            tickers_tuple,
-            tuple(df.set_index("Ticker")["Quantity"].reindex(tickers).fillna(0).values),
-            tuple(df.set_index("Ticker")["Market Value"].reindex(tickers).fillna(0).values),
-        )
-    if not _liq_df.empty:
-        _liq_display = _liq_df.copy()
-        _liq_display["Market Value"]          = _liq_display["Market Value"].map(lambda x: f"{_currency}{x:,.0f}")
-        _liq_display["Avg Daily Volume (3M)"] = _liq_display["Avg Daily Volume (3M)"].map(
-            lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
-        _liq_display["Days to Liquidate"]     = _liq_display["Days to Liquidate"].map(
-            lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-        st.dataframe(_liq_display, use_container_width=True)
-    else:
-        empty_state("💧", "Liquidity data unavailable", "Could not fetch volume data")
-
-    # ── Concentration Analytics ────────────────────────────
-    section_header("Concentration & Diversification")
-
-    _eff_n  = effective_n(weights_series)
-    _hhi    = float((weights_series ** 2).sum())
-    _top1   = float(weights_series.max())
-    _top3   = float(weights_series.nlargest(3).sum())
-
-    cx1,cx2,cx3,cx4 = st.columns(4)
-    cx1.metric("Effective Positions", f"{_eff_n:.1f}",
-               help="1/HHI — equivalent number of equal-weight positions with same concentration")
-    cx2.metric("HHI",                 f"{_hhi:.4f}",
-               help="Herfindahl-Hirschman Index. <0.15 = diversified, >0.25 = concentrated")
-    cx3.metric("Largest Position",    f"{_top1:.2%}")
-    cx4.metric("Top 3 Concentration", f"{_top3:.2%}")
+    card_header("CONCENTRATION & DIVERSIFICATION", colour="#ef4444")
+    _con_c1, _con_c2, _con_c3 = st.columns(3)
+    _con_c1.metric("Effective N (HHI)", f"{effective_n(weights_series):.1f}",
+                   help="Higher = more diversified")
+    _sc = sector_concentration(df)
+    _sc_top_weight = _sc.iloc[0]["Weight"] if not _sc.empty else None
+    _sc_top_sector = _sc.iloc[0]["Sector"] if not _sc.empty else "—"
+    _con_c2.metric("Top Sector Weight",
+                   f"{_sc_top_weight:.2%}" if _sc_top_weight is not None else "N/A",
+                   help=f"Largest sector: {_sc_top_sector}")
+    _atc = asset_type_concentration(df)
+    _atc_top_weight = _atc.iloc[0]["Weight"] if not _atc.empty else None
+    _atc_top_type = _atc.iloc[0]["Asset Type"] if not _atc.empty else "—"
+    _con_c3.metric("Top Asset Type Weight",
+                   f"{_atc_top_weight:.2%}" if _atc_top_weight is not None else "N/A",
+                   help=f"Dominant type: {_atc_top_type}")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # Sector breakdown — only show if we have meaningful sector data
-    _has_sector_data = "Sector" in df.columns and (df["Sector"] != "Unknown").any()
-    if _has_sector_data:
-        _sec_df  = sector_concentration(df[df["Sector"] != "Unknown"])
-        _type_df = asset_type_concentration(df)
-
-        sc1, sc2 = st.columns(2)
-        with sc1:
-            section_header("Sector Breakdown")
-            # Build per-ticker treemap data
-            _treemap_df = df[df["Sector"] != "Unknown"][["Ticker","Sector","Current Weight"]].copy()
-            _treemap_df = _treemap_df.rename(columns={"Current Weight": "Weight"})
-
-            # Assign a distinct colour per sector
-            _SECTOR_COLOURS = {
-                "Technology":             "#3b82f6",
-                "Communication Services": "#8b5cf6",
-                "Consumer Discretionary": "#f59e0b",
-                "Consumer Staples":       "#10b981",
-                "Financials":             "#06b6d4",
-                "Financial Services":     "#06b6d4",
-                "Healthcare":             "#ec4899",
-                "Industrials":            "#f97316",
-                "Energy":                 "#eab308",
-                "Utilities":              "#14b8a6",
-                "Real Estate":            "#a78bfa",
-                "Materials":              "#84cc16",
-                "ETF":                    "#64748b",
-                "Index":                  "#94a3b8",
-            }
-            _default_palette = ["#3b82f6","#8b5cf6","#f59e0b","#10b981",
-                                 "#06b6d4","#ec4899","#f97316","#eab308",
-                                 "#14b8a6","#a78bfa","#84cc16","#64748b"]
-            _sectors = _treemap_df["Sector"].unique().tolist()
-            _colour_map = {}
-            for i, s in enumerate(_sectors):
-                _colour_map[s] = _SECTOR_COLOURS.get(s, _default_palette[i % len(_default_palette)])
-
-            # Assign colour to each row — sector-level colour, slightly dimmed for tickers
-            def _tile_colour(row):
-                base = _colour_map.get(row["Sector"], "#3b82f6")
-                return base
-            _treemap_df["Color"] = _treemap_df.apply(_tile_colour, axis=1)
-
-            _sec_fig = px.treemap(
-                _treemap_df,
-                path=["Sector", "Ticker"],
-                values="Weight",
-                color="Sector",
-                color_discrete_map=_colour_map,
-            )
-            _sec_fig.update_traces(
-                texttemplate="<b>%{label}</b><br>%{value:.1%}",
-                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
-                textfont=dict(size=13, family="Inter, Segoe UI, sans-serif", color="white"),
-                marker=dict(
-                    line=dict(width=3, color="#0f172a"),
-                    pad=dict(t=28, l=6, r=6, b=6),
-                    cornerradius=6,
-                ),
-                root_color="#0f172a",
-            )
-            _sec_fig.update_layout(
-                height=420,
-                margin=dict(l=0, r=0, t=0, b=0),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Inter, Segoe UI, sans-serif", color="white"),
-            )
-            st.plotly_chart(_sec_fig, use_container_width=True)
-
-            # Table underneath
-            _sec_display = _sec_df[["Sector","Weight","Holdings","% of HHI"]].copy()
-            _sec_display["Weight"]    = _sec_display["Weight"].map("{:.2%}".format)
-            _sec_display["% of HHI"] = _sec_display["% of HHI"].map("{:.1%}".format)
-            st.dataframe(_sec_display.set_index("Sector"), use_container_width=True)
-
-        with sc2:
-            section_header("Asset Type Breakdown")
-            _type_fig = px.pie(
-                _type_df, names="Asset Type", values="Weight",
-                color_discrete_sequence=["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4"],
-                hole=0.45,
-            )
-            _type_fig.update_traces(
-                texttemplate="%{label}<br>%{percent}",
-                hovertemplate="<b>%{label}</b><br>Weight: %{value:.2%}<extra></extra>",
-            )
-            _type_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
-                                    showlegend=True,
-                                    legend=dict(orientation="h",yanchor="bottom",y=-0.15))
-            st.plotly_chart(_type_fig, use_container_width=True)
-
-            _type_display = _type_df.copy()
-            _type_display["Weight"] = _type_display["Weight"].map("{:.2%}".format)
-            st.dataframe(_type_display.set_index("Asset Type"), use_container_width=True)
-
-    # ── Correlation Matrix ─────────────────────────────────
-    if returns.shape[1] > 1:
-        section_header("Asset Correlation Matrix")
-        _corr_returns = price_data.ffill().pct_change().dropna(how='all')
-        fig = px.imshow(_corr_returns.corr(), text_auto=".2f", color_continuous_scale="RdBu_r",
-                        origin="lower", aspect="auto")
-        fig.update_layout(height=580, margin=dict(l=20,r=20,t=20,b=20))
-        st.plotly_chart(fig, use_container_width=True)
+    card_header("SECTOR BREAKDOWN")
+    if not _sc.empty:
+        _sfig = px.bar(_sc, x="Sector", y="Weight",
+                       color_discrete_sequence=["#8b5cf6"])
+        _sfig.update_layout(height=260, margin=dict(l=0,r=0,t=0,b=0),
+                            yaxis_title="", xaxis_title="",
+                            yaxis=dict(tickformat=".0%"))
+        _sfig.update_xaxes(tickangle=-30)
+        st.plotly_chart(_sfig, use_container_width=True)
     else:
-        empty_state("🔗","Correlation matrix requires multiple assets")
+        empty_state("🏭", "Sector data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Row 6: Correlation Matrix (full width) ──────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ef4444;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("ASSET CORRELATION MATRIX", colour="#ef4444")
+    if len(tickers) > 1:
+        # Compute from raw prices with NaN preserved (pairwise) — avoids the
+        # zero-fill in compute_returns() which artificially biases correlations toward 0
+        _ret_for_corr = price_data[tickers].ffill().pct_change().iloc[1:]
+        _corr_mat = _ret_for_corr.corr(method="pearson", min_periods=30)
+        _n = len(_corr_mat)
+        _cell_h = max(40, min(60, 500 // _n))
+        _height  = max(360, _n * _cell_h + 80)
+        _labels = _corr_mat.columns.tolist()
+        _n = len(_labels)
+        _font_size = max(8, min(11, 160 // _n))
+        _height = min(520, max(320, _n * 24 + 100))
+        _cfig = go.Figure(go.Heatmap(
+            z=_corr_mat.values,
+            x=_labels,
+            y=_labels,
+            colorscale="RdBu_r",
+            zmin=-1, zmax=1,
+            text=[[f"{v:.2f}" for v in row] for row in _corr_mat.values],
+            texttemplate="%{text}",
+            textfont=dict(size=_font_size),
+            hovertemplate="%{y} / %{x}: <b>%{z:.2f}</b><extra></extra>",
+            colorbar=dict(
+                title="Corr", thickness=12, len=0.5,
+                tickfont=dict(color="#64748b"),
+                title_font=dict(color="#64748b"),
+            ),
+        ))
+        _cfig.update_layout(
+            height=_height,
+            margin=dict(l=0, r=80, t=10, b=80),
+            xaxis=dict(side="bottom", tickangle=-45, tickfont=dict(size=_font_size), autorange="reversed"),
+            yaxis=dict(side="right", autorange="reversed", tickfont=dict(size=_font_size)),
+        )
+        st.plotly_chart(_cfig, use_container_width=True)
+    else:
+        empty_state("📊", "Single asset", "Correlation matrix requires 2+ assets")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ── TAB 3: OPTIMIZATION ────────────────────────────────────
-with tab3:
+# ── MODULE: OPTIMIZATION ───────────────────────────────────
+elif _module == "optimization":
+
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:#f59e0b;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Optimization</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Portfolio Optimizer</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     METHOD_INFO = {
         "Max Sharpe":          {"icon":"📈","tagline":"Best risk-adjusted return",
@@ -1950,20 +2004,15 @@ with tab3:
                    "to beat consistently — a useful benchmark against which to judge every other method."},
     }
 
-    section_header("Optimisation Method", color="var(--cyan)")
-
-    # ── Method selector: on_change busts the opt cache, no manual rerun needed ──
+    # ── Method selector ────────────────────────────────────
     def _on_method_change():
         for k in ("_opt_key","optimal_weights"): st.session_state.pop(k, None)
         st.session_state["opt_method"] = st.session_state.get("opt_method_radio", st.session_state.get("opt_method","Max Sharpe"))
 
     st.radio(
-        "Method",
-        list(OPTIMIZERS.keys()),
-        horizontal=True,
+        "Method", list(OPTIMIZERS.keys()), horizontal=True,
         index=list(OPTIMIZERS.keys()).index(st.session_state.get("opt_method", "Max Sharpe")),
-        key="opt_method_radio",
-        label_visibility="collapsed",
+        key="opt_method_radio", label_visibility="collapsed",
         on_change=_on_method_change,
     )
 
@@ -1972,17 +2021,17 @@ with tab3:
     # Method info card
     info = METHOD_INFO.get(opt_method, {})
     st.markdown(f"""
-    <div style="display:flex;align-items:flex-start;gap:18px;padding:18px 22px;margin-top:16px;
+    <div style="display:flex;align-items:flex-start;gap:18px;padding:18px 22px;
         border-radius:var(--radius);
         background:linear-gradient(135deg,var(--bg-surface) 0%,var(--bg-elevated) 100%);
-        border:1px solid var(--border);border-left:3px solid var(--accent);
-        margin-bottom:24px;box-shadow:var(--shadow);">
+        border:1px solid var(--border);border-left:3px solid #f59e0b;
+        margin-bottom:20px;box-shadow:var(--shadow);">
       <div style="font-size:30px;line-height:1;flex-shrink:0;margin-top:2px;">{info.get('icon','🎯')}</div>
       <div>
         <div style="font-size:14px;font-weight:600;color:var(--text-primary);
             margin-bottom:5px;letter-spacing:-0.01em;">
             {opt_method}
-            <span style="font-size:10px;font-weight:700;color:var(--accent);
+            <span style="font-size:10px;font-weight:700;color:#f59e0b;
                 margin-left:10px;letter-spacing:0.08em;text-transform:uppercase;">
                 {info.get('tagline','')}</span>
         </div>
@@ -1995,151 +2044,22 @@ with tab3:
         curr_ret, curr_vol, curr_sharpe = portfolio_performance(weights_series.values,  returns, rf)
         opt_ret,  opt_vol,  opt_sharpe  = portfolio_performance(optimal_weights.values, returns, rf)
 
-        # ── Comparison metrics ─────────────────────────────
-        section_header("Portfolio Comparison")
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        c1.metric("Current Return",       f"{curr_ret:.2%}")
-        c2.metric("Current Volatility",   f"{curr_vol:.2%}")
-        c3.metric("Current Sharpe",       f"{curr_sharpe:.2f}")
-        c4.metric("Optimized Return",     f"{opt_ret:.2%}",    delta=f"{opt_ret-curr_ret:.2%}")
-        c5.metric("Optimized Volatility", f"{opt_vol:.2%}",    delta=f"{opt_vol-curr_vol:.2%}")
-        c6.metric("Optimized Sharpe",     f"{opt_sharpe:.2f}", delta=f"{opt_sharpe-curr_sharpe:.2f}")
+        # ── Stat row ────────────────────────────────────────
+        _os1, _os2, _os3, _os4 = st.columns(4)
+        _sharpe_delta = f"{opt_sharpe - curr_sharpe:+.2f}"
+        _ret_delta    = f"{opt_ret - curr_ret:+.2%}"
+        _os1.metric("Current Sharpe",  f"{curr_sharpe:.2f}")
+        _os2.metric("Optimal Sharpe",  f"{opt_sharpe:.2f}",  delta=_sharpe_delta)
+        _os3.metric("Optimal Return",  f"{opt_ret:.2%}",     delta=_ret_delta)
+        _os4.metric("Optimal Vol.",    f"{opt_vol:.2%}",     delta=f"{opt_vol - curr_vol:+.2%}")
 
-        # ── Weight comparison + trade instructions ────────
-        section_header("Weight Comparison & Trade Instructions")
-
-        # Build price & quantity lookup from holdings df
-        _price_map = df.set_index("Ticker")["Current Price"].to_dict()
-        _qty_map   = df.set_index("Ticker")["Quantity"].to_dict()
-
-        wt_df = pd.DataFrame({
-            "Current Weight":   weights_series.reindex(optimal_weights.index).fillna(0),
-            "Optimized Weight": optimal_weights,
-        })
-        wt_df["Change"] = wt_df["Optimized Weight"] - wt_df["Current Weight"]
-        wt_df = wt_df.sort_values("Optimized Weight", ascending=False)
-
-        # Trade instruction columns
-        _trades = []
-        for ticker in wt_df.index:
-            _price        = _price_map.get(ticker, np.nan)
-            _cur_qty      = float(_qty_map.get(ticker, 0))
-            _opt_weight   = float(wt_df.loc[ticker, "Optimized Weight"])
-            _target_value = _opt_weight * total_value
-            _target_qty   = (_target_value / _price) if (pd.notna(_price) and _price > 0) else np.nan
-            _delta_qty    = (_target_qty - _cur_qty)  if pd.notna(_target_qty) else np.nan
-
-            # Round to whole shares
-            _delta_qty_r  = round(_delta_qty)  if pd.notna(_delta_qty)  else np.nan
-            _target_qty_r = round(_target_qty) if pd.notna(_target_qty) else np.nan
-            _cur_qty_r    = round(_cur_qty)
-
-            if pd.isna(_delta_qty_r):
-                _action = "N/A"
-                _shares = "N/A"
-            elif abs(_delta_qty_r) < 1:           # ignore sub-share noise
-                _action = "Hold"
-                _shares = "—"
-            elif _delta_qty_r > 0:
-                _action = "Buy"
-                _shares = f"+{_delta_qty_r:,.0f}"
-            else:
-                _action = "Sell"
-                _shares = f"{_delta_qty_r:,.0f}"
-
-            _trades.append({
-                "Action":         _action,
-                "Shares":         _shares,
-                "Current Qty":    f"{_cur_qty_r:,.0f}",
-                "Target Qty":     f"{_target_qty_r:,.0f}" if pd.notna(_target_qty_r) else "N/A",
-                "Current Price":  f"{_currency}{_price:,.2f}" if pd.notna(_price) else "N/A",
-            })
-
-        _trade_df = pd.DataFrame(_trades, index=wt_df.index)
-        wt_df = pd.concat([wt_df, _trade_df], axis=1)
-
-        # Colour-code the Action column
-        def _style_action(val):
-            if val == "Buy":  return "color: #22c55e; font-weight:600"
-            if val == "Sell": return "color: #ef4444; font-weight:600"
-            if val == "Hold": return "color: #94a3b8"
-            return ""
-
-        st.dataframe(
-            style_pl(wt_df, ["Change"])
-            .format({
-                "Current Weight":   "{:.2%}",
-                "Optimized Weight": "{:.2%}",
-                "Change":           "{:+.2%}",
-            })
-            .map(_style_action, subset=["Action"]),
-            use_container_width=True,
+        # ── Primary chart: Efficient Frontier ───────────────
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #f59e0b;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
         )
-
-        # Turnover summary
-        _turnover     = float(wt_df["Change"].abs().sum() / 2)
-        _cost_pct     = _turnover * DEFAULT_TRANSACTION_COST
-        _cost_value   = _cost_pct * total_value
-        _buy_count    = (_trade_df["Action"] == "Buy").sum()
-        _sell_count   = (_trade_df["Action"] == "Sell").sum()
-        _hold_count   = (_trade_df["Action"] == "Hold").sum()
-
-        ts1,ts2,ts3,ts4,ts5 = st.columns(5)
-        ts1.metric("Portfolio Turnover",   f"{_turnover:.2%}")
-        ts2.metric("Est. Transaction Cost",f"{_currency}{_cost_value:,.0f}", help=f"{_cost_pct:.3%} of AUM")
-        ts3.metric("Buys",                 str(_buy_count),  delta=None)
-        ts4.metric("Sells",                str(_sell_count), delta=None)
-        ts5.metric("Holds",                str(_hold_count), delta=None)
-
-        # ── Weight bar chart ───────────────────────────────
-        wt_bar = pd.DataFrame({
-            "Current":   weights_series.reindex(optimal_weights.index).fillna(0).values,
-            "Optimized": optimal_weights.values,
-        }, index=optimal_weights.index)
-        fig_wt = go.Figure([
-            go.Bar(name="Current",   x=wt_bar.index, y=wt_bar["Current"],   marker_color="#64748b"),
-            go.Bar(name="Optimized", x=wt_bar.index, y=wt_bar["Optimized"], marker_color="#22c55e"),
-        ])
-        fig_wt.update_layout(barmode="group", height=300, margin=dict(l=0,r=0,t=0,b=0),
-                             yaxis_tickformat=".1%",
-                             legend=dict(orientation="h",y=1.02,x=1,xanchor="right"))
-        st.plotly_chart(fig_wt, use_container_width=True)
-
-        # ── Risk Parity: risk contribution chart ──────────
-        if opt_method == "Risk Parity":
-            section_header("Risk Contributions — Equal Risk Parity Target")
-            cov_ann  = returns.cov().values * TRADING_DAYS
-            w_arr    = optimal_weights.values
-            pv       = float(np.sqrt(w_arr @ cov_ann @ w_arr))
-            rc       = w_arr * (cov_ann @ w_arr) / pv
-            rc_pct   = rc / rc.sum()
-            rc_df    = pd.DataFrame({"Asset": optimal_weights.index,
-                                     "Risk Contribution": rc_pct, "Weight": w_arr})
-            fig_rc   = px.bar(rc_df, x="Asset", y="Risk Contribution",
-                              color="Risk Contribution", color_continuous_scale="Blues",
-                              hover_data={"Weight":":.2%","Risk Contribution":":.2%"})
-            fig_rc.add_hline(y=1/len(optimal_weights), line_dash="dash", line_color="#f59e0b",
-                             annotation_text="Equal target", annotation_position="top right")
-            fig_rc.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
-                                 showlegend=False, coloraxis_showscale=False)
-            fig_rc.update_yaxes(tickformat=".1%")
-            st.plotly_chart(fig_rc, use_container_width=True)
-
-        # ── Max Diversification: DR metrics ───────────────
-        if opt_method == "Max Diversification":
-            section_header("Diversification Ratio")
-            cov_ann    = returns.cov().values * TRADING_DAYS
-            asset_vols = np.sqrt(np.diag(cov_ann))
-            w_opt      = optimal_weights.values
-            w_cur      = weights_series.reindex(optimal_weights.index).fillna(0).values
-            dr_opt  = float(w_opt @ asset_vols) / float(np.sqrt(w_opt @ cov_ann @ w_opt))
-            dr_cur  = float(w_cur @ asset_vols) / float(np.sqrt(w_cur @ cov_ann @ w_cur))
-            d1, d2  = st.columns(2)
-            d1.metric("Current DR",   f"{dr_cur:.3f}")
-            d2.metric("Optimized DR", f"{dr_opt:.3f}", delta=f"{dr_opt-dr_cur:+.3f}")
-
-        # ── Efficient frontier ─────────────────────────────
-        section_header("Efficient Frontier", color="var(--purple)")
+        card_header("EFFICIENT FRONTIER", colour="#f59e0b")
         fig_f = go.Figure([
             go.Scatter(
                 x=frontier["Volatility"], y=frontier["Return"], mode="markers",
@@ -2163,18 +2083,148 @@ with tab3:
             ),
         ])
         fig_f.update_layout(
-            height=580, margin=dict(l=40,r=40,t=20,b=40), showlegend=True,
+            height=360, margin=dict(l=40,r=40,t=10,b=40), showlegend=True,
             legend=dict(orientation="v",yanchor="bottom",y=0.04,xanchor="left",x=0.02,
                         bgcolor="rgba(11,17,32,0.92)",
-                        bordercolor="#3b82f6", borderwidth=1,
+                        bordercolor="#f59e0b", borderwidth=1,
                         font=dict(color="#e2e8f0", size=12)))
         st.plotly_chart(fig_f, use_container_width=True, key="efficient_frontier")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Row 2: Portfolio Comparison ────────────────────
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #f59e0b;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("PORTFOLIO COMPARISON", colour="#f59e0b")
+        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        c1.metric("Current Return",       f"{curr_ret:.2%}")
+        c2.metric("Current Volatility",   f"{curr_vol:.2%}")
+        c3.metric("Current Sharpe",       f"{curr_sharpe:.2f}")
+        c4.metric("Optimized Return",     f"{opt_ret:.2%}",    delta=f"{opt_ret-curr_ret:.2%}")
+        c5.metric("Optimized Volatility", f"{opt_vol:.2%}",    delta=f"{opt_vol-curr_vol:.2%}")
+        c6.metric("Optimized Sharpe",     f"{opt_sharpe:.2f}", delta=f"{opt_sharpe-curr_sharpe:.2f}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Row 3: Weight Comparison + Trade Instructions ──
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #f59e0b;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("WEIGHT COMPARISON & TRADE INSTRUCTIONS", colour="#f59e0b")
+
+        # Max position size slider — styled to match amber theme
+        st.markdown(
+            '<div style="margin-bottom:16px;padding:12px 16px;'
+            'background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);'
+            'border-radius:var(--radius-sm);">',
+            unsafe_allow_html=True,
+        )
+        _new_max_w = st.slider(
+            "Max Position Size (%)", 5.0, 50.0,
+            st.session_state.get("max_weight_pct", 15.0), 1.0,
+            key="opt_max_weight",
+            help="Maximum weight any single asset can hold in the optimized portfolio",
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+        if _new_max_w != st.session_state.get("max_weight_pct", 15.0):
+            st.session_state["max_weight_pct"] = _new_max_w
+            for k in ("_opt_key", "optimal_weights"):
+                st.session_state.pop(k, None)
+            st.rerun()
+        max_weight_pct = st.session_state.get("max_weight_pct", 15.0)
+        max_weight     = max_weight_pct / 100
+
+        _price_map = df.set_index("Ticker")["Current Price"].to_dict()
+        _qty_map   = df.set_index("Ticker")["Quantity"].to_dict()
+
+        wt_df = pd.DataFrame({
+            "Current Weight":   weights_series.reindex(optimal_weights.index).fillna(0),
+            "Optimized Weight": optimal_weights,
+        })
+        wt_df["Change"] = wt_df["Optimized Weight"] - wt_df["Current Weight"]
+        wt_df = wt_df.sort_values("Optimized Weight", ascending=False)
+
+        _trades = []
+        for ticker in wt_df.index:
+            _price        = _price_map.get(ticker, np.nan)
+            _cur_qty      = float(_qty_map.get(ticker, 0))
+            _opt_weight   = float(wt_df.loc[ticker, "Optimized Weight"])
+            _target_value = _opt_weight * total_value
+            _target_qty   = (_target_value / _price) if (pd.notna(_price) and _price > 0) else np.nan
+            _delta_qty    = (_target_qty - _cur_qty)  if pd.notna(_target_qty) else np.nan
+
+            if pd.notna(_delta_qty):
+                _delta_qty_rounded = int(round(_delta_qty))
+            else:
+                _delta_qty_rounded = None
+
+            if _delta_qty_rounded is None:
+                _action = "—"
+            elif abs(_delta_qty_rounded) < 1:
+                _action = "Hold"
+            elif _delta_qty_rounded > 0:
+                _action = f"Buy {_delta_qty_rounded:+,}"
+            else:
+                _action = f"Sell {abs(_delta_qty_rounded):,}"
+
+            _trades.append({
+                "Ticker":           ticker,
+                "Current Weight":   f"{wt_df.loc[ticker,'Current Weight']:.2%}",
+                "Optimized Weight": f"{wt_df.loc[ticker,'Optimized Weight']:.2%}",
+                "Change":           f"{wt_df.loc[ticker,'Change']:+.2%}",
+                "Action":           _action,
+            })
+
+        _trades_df = pd.DataFrame(_trades)
+        st.dataframe(_trades_df, use_container_width=True)
+
+        # Risk contributions / diversification ratio
+        _rc_tab1, _rc_tab2 = st.tabs(["Risk Contributions", "Diversification Ratio"])
+        with _rc_tab1:
+            card_header("EQUAL RISK PARITY TARGET")
+            try:
+                from optimizer import risk_contribution
+                _rc  = risk_contribution(optimal_weights.values, returns.cov().values * 252)
+                _rcd = pd.DataFrame({"Ticker": optimal_weights.index, "Risk Contribution": _rc})
+                _rcd = _rcd.sort_values("Risk Contribution", ascending=False)
+                _rcf = px.bar(_rcd, x="Ticker", y="Risk Contribution",
+                              color="Risk Contribution", color_continuous_scale="Blues")
+                _rcf.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                   showlegend=False, coloraxis_showscale=False)
+                st.plotly_chart(_rcf, use_container_width=True)
+            except (ImportError, Exception):
+                empty_state("⚖️","Risk contribution data unavailable")
+
+        with _rc_tab2:
+            card_header("DIVERSIFICATION RATIO")
+            try:
+                from optimizer import diversification_ratio
+                _dr_curr = diversification_ratio(weights_series.values, returns.cov().values * 252,
+                                                  returns.std().values * np.sqrt(252))
+                _dr_opt  = diversification_ratio(optimal_weights.values, returns.cov().values * 252,
+                                                  returns.std().values * np.sqrt(252))
+                _drc1, _drc2 = st.columns(2)
+                _drc1.metric("Current Diversification Ratio", f"{_dr_curr:.3f}")
+                _drc2.metric("Optimized Diversification Ratio", f"{_dr_opt:.3f}",
+                             delta=f"{_dr_opt - _dr_curr:+.3f}")
+            except (ImportError, Exception):
+                empty_state("🌐","Diversification ratio unavailable")
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
     else:
         empty_state("🎯","Optimization unavailable","Could not compute optimal weights for this portfolio")
 
-    # ── Scenario Analysis ──────────────────────────────────
-    section_header("Scenario Analysis", color="var(--cyan)")
+    # ── Row 4: Scenario Analysis ───────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #f59e0b;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("SCENARIO ANALYSIS", colour="#f59e0b")
     with st.expander("Run a what-if scenario", expanded=False):
         _scenario_mode = st.radio(
             "Mode", ["Cash Injection", "Trade Simulation"],
@@ -2210,7 +2260,7 @@ with tab3:
                     "Change":         "{:+.2%}",
                 }), use_container_width=True)
 
-        else:  # Trade Simulation
+        else:
             _trade_ticker = st.selectbox(
                 "Ticker", options=tickers + ["(new ticker)"], key="scenario_ticker"
             )
@@ -2237,209 +2287,288 @@ with tab3:
                 _tc1.metric("Sharpe",     f"{_ns2:.3f}", delta=f"{_ns2 - _curr_s2:+.3f}")
                 _tc2.metric("Volatility", f"{_nv2:.2%}", delta=f"{_nv2 - _curr_vol2:+.2%}")
                 _tc3.metric("Return",     f"{_nr2:.2%}", delta=f"{_nr2 - _curr_ret2:+.2%}")
-                _nw2_df = pd.DataFrame({
-                    "Ticker":         _nw2.index,
-                    "Current Weight": weights_series.reindex(_nw2.index).fillna(0).values,
-                    "New Weight":     _nw2.values,
-                    "Change":         (_nw2 - weights_series.reindex(_nw2.index).fillna(0)).values,
-                }).reset_index(drop=True)
-                st.dataframe(_nw2_df.style.format({
-                    "Current Weight": "{:.2%}",
-                    "New Weight":     "{:.2%}",
-                    "Change":         "{:+.2%}",
-                }), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ── TAB 4: PERFORMANCE ─────────────────────────────────────
-with tab4:
-    section_header("Performance Metrics", color="var(--positive)")
+# ── MODULE: PERFORMANCE ────────────────────────────────────
+elif _module == "performance":
+
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:#22c55e;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Performance</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Performance Attribution</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Benchmark selector ──────────────────────────────────
+    _benchmark_map = {
+        "S&P 500": "^GSPC", "NIFTY 50": "^NSEI", "NIFTY 500": "^CRSLDX",
+        "SENSEX": "^BSESN", "Dow Jones": "^DJI", "NASDAQ": "^IXIC", "Custom…": None,
+    }
+    _perf_cols = st.columns([2, 5])
+    with _perf_cols[0]:
+        _bm_name = st.selectbox("Benchmark", list(_benchmark_map.keys()),
+                                key="perf_benchmark_name")
+    if _bm_name == "Custom…":
+        with _perf_cols[1]:
+            _custom_bm = st.text_input("Ticker", placeholder="e.g. QQQ, ^FTSE",
+                                       key="perf_custom_bm").strip().upper()
+        _new_bm = _custom_bm if _custom_bm else st.session_state.get("benchmark", "^GSPC")
+    else:
+        _new_bm = _benchmark_map[_bm_name]
+    if _new_bm and _new_bm != st.session_state.get("benchmark"):
+        st.session_state["benchmark"] = _new_bm
+        st.rerun()
+
+    # ── Timeframe selector ──────────────────────────────────
     pm_tf = st.radio("Metrics Timeframe", ["1M","3M","6M","1Y","3Y","5Y","All"],
                      horizontal=True, index=3, key="pm_timeframe", label_visibility="collapsed")
     _pr_sliced = slice_tf(portfolio_returns, pm_tf) if pm_tf != "All" else portfolio_returns
     _br_sliced = slice_tf(benchmark_returns, pm_tf) if (benchmark_returns is not None and pm_tf != "All") else benchmark_returns
     pm = get_performance_metrics(_pr_sliced, _br_sliced, rf_rate=_rf_rate)
 
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("Total Return",      f"{pm['total_return']:.2%}")
-    c2.metric("Annualized Return", f"{pm['annualized_return']:.2%}")
-    c3.metric("Volatility",        f"{pm['volatility']:.2%}")
-    c4.metric("Sharpe Ratio",      f"{pm['sharpe_ratio']:.2f}")
-    c5.metric("Sortino Ratio",     f"{pm['sortino_ratio']:.2f}")
+    # ── Stat row ────────────────────────────────────────────
+    _ps1, _ps2, _ps3, _ps4 = st.columns(4)
+    _ps1.metric("Total Return",      f"{pm['total_return']:.2%}")
+    _ps2.metric("Annualized Return", f"{pm['annualized_return']:.2%}")
+    _ps3.metric("Sharpe Ratio",      f"{pm['sharpe_ratio']:.2f}")
+    _ps4.metric("Max Drawdown",      f"{pm['max_drawdown']:.2%}")
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    cA,cB,cC,cD = st.columns(4)
-    cA.metric("Max Drawdown", f"{pm['max_drawdown']:.2%}")
-    cB.metric("Win Rate",     f"{pm['win_rate']:.1%}")
-    if "alpha" in pm:
-        cC.metric("Alpha",             f"{pm['alpha']:.2%}")
-        cD.metric("Information Ratio", f"{pm['information_ratio']:.2f}")
-
-    if benchmark_returns is not None:
-        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-        section_header("Benchmark Comparison")
-        b1,b2,b3,b4 = st.columns(4)
-        b1.metric("Portfolio Ann. Return", f"{pm['annualized_return']:.2%}")
-        b2.metric("Benchmark Ann. Return", f"{pm['benchmark_annualized_return']:.2%}")
-        b3.metric("Outperformance",        f"{pm['outperformance']:.2%}")
-        b4.metric("Beta",                  f"{pm['beta']:.2f}")
-
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-    section_header("Cumulative Returns", color="var(--positive)")
-    tf = st.radio("Timeframe",["1M","3M","6M","1Y","3Y","5Y"],horizontal=True,
-                  key="perf_timeframe",label_visibility="collapsed")
-
-    # ── Build cumulative return series, rebased to 0 at start of window ──
-    # Use (1+r).cumprod() so we stay in price-relative space, then rebase:
-    # rebase = series / series.iloc[0] - 1  (correct ratio rebase, not subtraction)
+    # ── Primary chart: Cumulative Returns ───────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("CUMULATIVE RETURNS", colour="#22c55e")
+    tf = pm_tf if pm_tf != "All" else "5Y"
     cum_full = (1 + portfolio_returns.dropna()).cumprod()
     cum      = slice_tf(cum_full, tf)
     if cum.empty:
         cum = cum_full
-    cum      = cum / cum.iloc[0] - 1          # rebase: 0% at window start
-
+    cum      = cum / cum.iloc[0] - 1
     perf_df = pd.DataFrame({"Portfolio": cum})
-
     if benchmark_returns is not None:
         bc_full = (1 + benchmark_returns.dropna()).cumprod()
-        bc      = slice_tf(bc_full, tf)
-        # Align benchmark to same start date as portfolio
-        bc      = bc.reindex(cum.index, method="ffill")
+        bc      = slice_tf(bc_full, tf).reindex(cum.index, method="ffill")
         if not bc.empty:
             bc = bc / bc.iloc[0] - 1
             perf_df["Benchmark"] = bc
-
-    fig = px.line(perf_df, color_discrete_map={"Portfolio":"#3b82f6","Benchmark":"#64748b"})
+    fig = px.line(perf_df, color_discrete_map={"Portfolio":"#22c55e","Benchmark":"#64748b"})
     fig.update_traces(line=dict(width=2))
-
-    # ── XIRR reference line ────────────────────────────────
-    # XIRR is an annualised cash-flow-weighted rate — project it as a straight
-    # compound growth curve anchored at 0% at the window start, so it serves
-    # as a "target pace" reference rather than a conflated return series.
     if portfolio_xirr is not None and not np.isnan(portfolio_xirr):
         xirr_start = cum.index[0]
         xirr_end   = cum.index[-1]
         xirr_dates = pd.date_range(xirr_start, xirr_end, freq="B")
         days_from_start = (xirr_dates - xirr_start).days
         xirr_curve      = (1 + portfolio_xirr) ** (days_from_start / 365) - 1
-
-        fig.add_scatter(
-            x=xirr_dates,
-            y=xirr_curve,
-            name=f"XIRR Pace ({portfolio_xirr:.2%} p.a.)",
-            line=dict(color="#f59e0b", width=1.5, dash="dot"),
-        )
-
-    fig.update_layout(
-        height=420,
-        margin=dict(l=0, r=0, t=0, b=0),
-        yaxis=dict(tickformat=".0%", title="Return"),
-        xaxis=dict(title="Date"),
-        hovermode="x unified",
-    )
+        fig.add_scatter(x=xirr_dates, y=xirr_curve,
+                        name=f"XIRR Pace ({portfolio_xirr:.2%} p.a.)",
+                        line=dict(color="#f59e0b", width=1.5, dash="dot"))
+    fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0),
+                      yaxis=dict(tickformat=".0%", title="Return"),
+                      xaxis=dict(title="Date"), hovermode="x unified")
     fig.update_traces(hovertemplate="%{y:.2%}")
     st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Capture Ratios ─────────────────────────────────────
+    # ── Row 2: Full metrics cards ──────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("PERFORMANCE METRICS", colour="#22c55e")
+    c1,c2,c3,c4,c5 = st.columns(5)
+    c1.metric("Total Return",      f"{pm['total_return']:.2%}")
+    c2.metric("Annualized Return", f"{pm['annualized_return']:.2%}")
+    c3.metric("Volatility",        f"{pm['volatility']:.2%}")
+    c4.metric("Sharpe Ratio",      f"{pm['sharpe_ratio']:.2f}")
+    c5.metric("Sortino Ratio",     f"{pm['sortino_ratio']:.2f}")
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    cA,cB,cC,cD = st.columns(4)
+    cA.metric("Max Drawdown", f"{pm['max_drawdown']:.2%}")
+    cB.metric("Win Rate",     f"{pm['win_rate']:.1%}")
+    if "alpha" in pm:
+        cC.metric("Alpha",             f"{pm['alpha']:.2%}")
+        cD.metric("Information Ratio", f"{pm['information_ratio']:.2f}")
     if benchmark_returns is not None:
-        _captures = compute_capture_ratios(_pr_sliced, _br_sliced)
-        _uc = _captures.get("upside_capture")
-        _dc = _captures.get("downside_capture")
-        _cap_c1, _cap_c2 = st.columns(2)
-        _cap_c1.metric(
-            "Upside Capture",
-            f"{_uc:.1f}%" if _uc is not None and not np.isnan(_uc) else "N/A",
-            help="% of benchmark's up-day gains captured. >100% = outperforms on up days."
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        b1,b2,b3,b4 = st.columns(4)
+        b1.metric("Portfolio Ann. Return", f"{pm['annualized_return']:.2%}")
+        b2.metric("Benchmark Ann. Return", f"{pm['benchmark_annualized_return']:.2%}")
+        b3.metric("Outperformance",        f"{pm['outperformance']:.2%}")
+        b4.metric("Beta",                  f"{pm['beta']:.2f}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 3: Capture Ratios | Period Returns ─────────────
+    _r3c1, _r3c2 = st.columns(2)
+
+    with _r3c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
         )
-        _cap_c2.metric(
-            "Downside Capture",
-            f"{_dc:.1f}%" if _dc is not None and not np.isnan(_dc) else "N/A",
-            help="% of benchmark's down-day losses mirrored. <100% = better protection on down days."
-        )
-
-    section_header("Period Returns")
-    pr      = get_period_returns(portfolio_returns, benchmark_returns)
-    pr.index += 1
-    pl_cols = ["Portfolio Return","Benchmark Return","Excess Return"] if "Benchmark Return" in pr.columns else ["Portfolio Return"]
-    st.dataframe(style_pl(pr, pl_cols).format({c:"{:.2%}" for c in pl_cols}), use_container_width=True)
-
-    # ── Performance Attribution ─────────────────────────────
-    section_header("Sector Contribution")
-    _sector_map_dict = df.set_index("Ticker")["Sector"].to_dict()
-    _perf_returns_sliced = slice_tf(returns, pm_tf) if pm_tf != "All" else returns
-    _sc_df = compute_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
-    if not _sc_df.empty:
-        _sc_fig = px.bar(
-            _sc_df, x="Contribution", y="Sector", orientation="h",
-            color="Contribution", color_continuous_scale=["#ef4444","#f5f5f5","#22c55e"],
-            text=_sc_df["Contribution"].map(lambda x: f"{x:.2%}"),
-        )
-        _sc_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
-                              showlegend=False, coloraxis_showscale=False)
-        _sc_fig.update_traces(textposition="outside")
-        st.plotly_chart(_sc_fig, use_container_width=True)
-    else:
-        empty_state("📊", "Sector data unavailable")
-
-    if benchmark in ("^GSPC", "^NSEI", "^CRSLDX") and benchmark_returns is not None:
-        section_header("Brinson Attribution")
-        _br_df, _mixed = compute_brinson_attribution(
-            weights_series, _perf_returns_sliced, _br_sliced, _sector_map_dict, benchmark
-        )
-        if _mixed:
-            st.warning("Attribution results may be misleading for mixed-market portfolios.")
-        if not _br_df.empty:
-            _br_display = _br_df.copy()
-            for _bcol in ["Portfolio Weight", "Benchmark Weight"]:
-                _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:.2%}")
-            for _bcol in ["Allocation Effect", "Selection Effect", "Interaction Effect", "Total Active"]:
-                _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:+.4%}")
-            st.dataframe(_br_display, use_container_width=True)
-
-    section_header("Rolling 60-Day Sharpe Ratio")
-    rm  = get_rolling_metrics(portfolio_returns, benchmark_returns, window=60)
-    fig = px.line(rm[["Sharpe Ratio"]], color_discrete_map={"Sharpe Ratio":"#3b82f6"})
-    if "Benchmark Sharpe" in rm.columns:
-        fig.add_scatter(x=rm.index, y=rm["Benchmark Sharpe"], name="Benchmark Sharpe",
-                        line=dict(color="#64748b",width=2))
-    fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0))
-    st.plotly_chart(fig, use_container_width=True)
-
-    section_header("Individual Stock Performance vs Benchmark")
-    if returns is not None and not returns.empty:
-        years      = len(returns) / TRADING_DAYS
-        bench_ann  = 0
+        card_header("CAPTURE RATIOS", colour="#22c55e")
         if benchmark_returns is not None:
-            bt        = (1+benchmark_returns).cumprod()-1
-            bench_ann = ((1+bt.iloc[-1])**(1/years)-1) if years > 0 else 0
+            _captures = compute_capture_ratios(_pr_sliced, _br_sliced)
+            _uc = _captures.get("upside_capture")
+            _dc = _captures.get("downside_capture")
+            _cap_c1, _cap_c2 = st.columns(2)
+            _cap_c1.metric(
+                "Upside Capture",
+                f"{_uc:.1f}%" if _uc is not None and not np.isnan(_uc) else "N/A",
+                help="% of benchmark's up-day gains captured. >100% = outperforms on up days."
+            )
+            _cap_c2.metric(
+                "Downside Capture",
+                f"{_dc:.1f}%" if _dc is not None and not np.isnan(_dc) else "N/A",
+                help="% of benchmark's down-day losses mirrored. <100% = better protection on down days."
+            )
+        else:
+            empty_state("📊", "No benchmark", "Select a benchmark to see capture ratios")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        stock_data = []
-        for ticker in returns.columns:
-            sr = returns[ticker].dropna()
-            if len(sr) > 0:
-                total = (1+sr).cumprod().iloc[-1]-1
-                ann   = ((1+total)**(1/years)-1) if years > 0 else 0
-                stock_data.append({"Ticker":ticker,"Annualized Return":ann,"vs Benchmark":ann-bench_ann})
+    with _r3c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("PERIOD RETURNS", colour="#22c55e")
+        pr      = get_period_returns(portfolio_returns, benchmark_returns)
+        pr.index += 1
+        pl_cols = ["Portfolio Return","Benchmark Return","Excess Return"] if "Benchmark Return" in pr.columns else ["Portfolio Return"]
+        st.dataframe(style_pl(pr, pl_cols).format({c:"{:.2%}" for c in pl_cols}), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        if stock_data:
-            spdf = pd.DataFrame(stock_data).sort_values("Annualized Return", ascending=True)
-            fig  = go.Figure([go.Bar(
-                y=spdf["Ticker"], x=spdf["Annualized Return"], orientation='h',
-                marker=dict(color=spdf["Annualized Return"], colorscale="RdYlGn",
-                            cmin=spdf["Annualized Return"].min(), cmax=spdf["Annualized Return"].max()),
-                hovertemplate="<b>%{y}</b><br>Return: %{x:.2%}<extra></extra>",
-            )])
-            if benchmark_returns is not None:
-                fig.add_vline(x=bench_ann, line_dash="dash", line_color="#64748b",
-                              annotation_text=f"Benchmark: {bench_ann:.2%}",
-                              annotation_position="top right")
-            fig.update_layout(height=max(300,len(spdf)*25), margin=dict(l=100,r=40,t=60,b=40),
-                               xaxis_title="Annualized Return", showlegend=False)
-            fig.update_xaxes(tickformat=".1%")
-            st.plotly_chart(fig, use_container_width=True)
+    # ── Row 4: Sector Contribution | Brinson Attribution ───
+    _r4c1, _r4c2 = st.columns(2)
+
+    _sector_map_dict     = df.set_index("Ticker")["Sector"].to_dict()
+    _perf_returns_sliced = slice_tf(returns, pm_tf) if pm_tf != "All" else returns
+
+    with _r4c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("SECTOR CONTRIBUTION", colour="#22c55e")
+        _sc_df = compute_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
+        if not _sc_df.empty:
+            _sc_fig = px.bar(
+                _sc_df, x="Contribution", y="Sector", orientation="h",
+                color="Contribution", color_continuous_scale=["#ef4444","#f5f5f5","#22c55e"],
+                text=_sc_df["Contribution"].map(lambda x: f"{x:.2%}"),
+            )
+            _sc_fig.update_layout(height=320, margin=dict(l=0,r=0,t=0,b=0),
+                                  showlegend=False, coloraxis_showscale=False)
+            _sc_fig.update_traces(textposition="outside")
+            st.plotly_chart(_sc_fig, use_container_width=True)
+        else:
+            empty_state("📊", "Sector data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r4c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("BRINSON ATTRIBUTION", colour="#22c55e")
+        if benchmark in ("^GSPC", "^NSEI", "^CRSLDX") and benchmark_returns is not None:
+            _br_result = compute_brinson_attribution(
+                weights_series, _perf_returns_sliced, _br_sliced, _sector_map_dict, benchmark
+            )
+            if isinstance(_br_result, tuple):
+                _br_df, _mixed = _br_result
+            else:
+                _br_df, _mixed = _br_result, False
+            if _mixed:
+                st.warning("Attribution results may be misleading for mixed-market portfolios.")
+            if not _br_df.empty:
+                _br_display = _br_df.copy()
+                for _bcol in ["Portfolio Weight", "Benchmark Weight"]:
+                    if _bcol in _br_display.columns:
+                        _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:.2%}")
+                for _bcol in ["Allocation Effect", "Selection Effect", "Interaction Effect", "Total Active"]:
+                    if _bcol in _br_display.columns:
+                        _br_display[_bcol] = _br_display[_bcol].map(lambda x: f"{x:+.4%}")
+                st.dataframe(_br_display, use_container_width=True)
+            else:
+                empty_state("📊", "Attribution data unavailable")
+        else:
+            empty_state("📊", "Attribution unavailable",
+                        "Available for S&P 500, Nifty 50, and CRSLDX benchmarks only")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 5: Rolling Sharpe | Individual Stock vs Benchmark
+    _r5c1, _r5c2 = st.columns(2)
+
+    with _r5c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("ROLLING 60-DAY SHARPE RATIO", colour="#22c55e")
+        rm  = get_rolling_metrics(portfolio_returns, benchmark_returns, window=60)
+        fig = px.line(rm[["Sharpe Ratio"]], color_discrete_map={"Sharpe Ratio":"#22c55e"})
+        if "Benchmark Sharpe" in rm.columns:
+            fig.add_scatter(x=rm.index, y=rm["Benchmark Sharpe"], name="Benchmark Sharpe",
+                            line=dict(color="#64748b",width=2))
+        fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0))
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r5c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("INDIVIDUAL STOCK VS BENCHMARK", colour="#22c55e")
+        if benchmark_returns is not None:
+            _indiv_perf = {}
+            for _t in tickers:
+                if _t in returns.columns:
+                    _tret = returns[_t].dropna()
+                    _tpm  = get_performance_metrics(_tret, _br_sliced, rf_rate=_rf_rate)
+                    _indiv_perf[_t] = {
+                        "Ann. Return":   f"{_tpm['annualized_return']:.2%}",
+                        "Sharpe":        f"{_tpm['sharpe_ratio']:.2f}",
+                        "Outperformance":f"{_tpm.get('outperformance', 0):.2%}",
+                        "Beta":          f"{_tpm.get('beta', 0):.2f}",
+                    }
+            if _indiv_perf:
+                st.dataframe(pd.DataFrame(_indiv_perf).T, use_container_width=True)
+            else:
+                empty_state("📊","No individual performance data")
+        else:
+            empty_state("📈","No benchmark selected","Select a benchmark for comparison")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ── TAB 5: ASSET ANALYTICS ─────────────────────────────────
-with tab5:
+# ── MODULE: ASSET ANALYTICS ────────────────────────────────
+elif _module == "asset_analytics":
+
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:#8b5cf6;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Asset Analytics</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Deep-Dive Analysis</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     if "selected_asset" not in st.session_state: st.session_state["selected_asset"] = tickers[0]
     if st.session_state["selected_asset"] not in tickers: st.session_state["selected_asset"] = tickers[0]
 
@@ -2449,11 +2578,9 @@ with tab5:
     asset_weight   = float(weights_series.get(selected_asset, 0))
     asset_stats    = get_asset_key_stats(selected_asset, asset_price, asset_returns, asset_weight)
 
-    # ── Company Profile ─────────────────────────────────────
+    # Company Profile Banner
     _is_indian = selected_asset.endswith((".NS", ".BO"))
     _profile   = {} if _is_indian else (cached_finnhub_profile(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else {})
-
-    # For Indian stocks, build profile from yfinance info
     if not _profile:
         try:
             _yf_info = yf.Ticker(selected_asset).info
@@ -2463,7 +2590,7 @@ with tab5:
                 "finnhubIndustry":     _yf_info.get("industry") or _yf_info.get("sector") or "—",
                 "country":             _yf_info.get("country", "India" if _is_indian else "—"),
                 "ipo":                 str(_yf_info.get("ipoExpectedDate", "—")),
-                "marketCapitalization":(_yf_info.get("marketCap", 0) or 0) / 1e6,  # convert to millions to match Finnhub unit
+                "marketCapitalization":(_yf_info.get("marketCap", 0) or 0) / 1e6,
                 "weburl":              _yf_info.get("website", ""),
                 "logo":                _yf_info.get("logo_url", ""),
             }
@@ -2474,10 +2601,9 @@ with tab5:
         _logo_html = (f'<img src="{_profile["logo"]}" style="width:40px;height:40px;'
                       f'border-radius:8px;object-fit:contain;background:#fff;padding:3px;">'
                       ) if _profile.get("logo") else ""
-        _mktcap = _profile.get("marketCapitalization", 0)  # in millions (USD for Finnhub, INR/M for yf fallback)
+        _mktcap = _profile.get("marketCapitalization", 0)
         if _is_indian and _mktcap:
-            # yfinance returns market cap in INR; convert millions → crores (1 crore = 10M INR)
-            _mktcap_raw = (_mktcap * 1e6)   # back to INR
+            _mktcap_raw = _mktcap * 1e6
             _mktcap_str = f"₹{_mktcap_raw/1e7:.0f}Cr" if _mktcap_raw >= 1e7 else f"₹{_mktcap_raw/1e5:.1f}L"
         else:
             _mktcap_str = (
@@ -2491,9 +2617,9 @@ with tab5:
                      f'</a>') if _web else ""
         st.markdown(f"""
         <div style="display:flex;align-items:center;gap:18px;padding:16px 20px;
-            margin-bottom:8px;border-radius:var(--radius);
+            margin-bottom:16px;border-radius:var(--radius);
             background:var(--bg-surface);border:1px solid var(--border);
-            box-shadow:var(--shadow);">
+            border-left:3px solid #8b5cf6;box-shadow:var(--shadow);">
           {_logo_html}
           <div style="flex:1;">
             <div style="font-size:15px;font-weight:700;color:var(--text-primary);
@@ -2509,9 +2635,6 @@ with tab5:
                 <span style="color:var(--text-secondary);font-weight:600;">Country</span>
                 &nbsp;{_profile.get('country','—')}</span>
               <span style="font-size:11px;color:var(--text-muted);">
-                <span style="color:var(--text-secondary);font-weight:600;">IPO</span>
-                &nbsp;{_profile.get('ipo','—')}</span>
-              <span style="font-size:11px;color:var(--text-muted);">
                 <span style="color:var(--text-secondary);font-weight:600;">Mkt Cap</span>
                 &nbsp;{_mktcap_str}</span>
               <span style="font-size:11px;">{_web_html}</span>
@@ -2520,61 +2643,108 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-    section_header(f"{selected_asset} — Key Stats")
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Portfolio Weight",  f"{asset_stats['weight']:.2%}")
-    c2.metric("Annual Return",     f"{asset_stats['annual_return']:.2%}")
-    c3.metric("Annual Volatility", f"{asset_stats['volatility']:.2%}")
-    c4.metric("Sharpe Ratio",      f"{asset_stats['sharpe_ratio']:.2f}")
-
-    section_header("Price History")
+    # ── Timeframe selector ──────────────────────────────────
     tf = st.radio("Timeframe",["1M","3M","6M","1Y","3Y","5Y"],horizontal=True,
                   key="asset_price_tf",label_visibility="collapsed")
-    fig = px.line(slice_tf(asset_price, tf), color_discrete_sequence=["#3b82f6"])
-    fig.update_traces(line=dict(width=1.8))
-    quick_chart(fig)
 
-    # Slice returns to the same timeframe so all charts stay in sync
+    # ── Stat row ────────────────────────────────────────────
+    _cur_price = float(asset_price.iloc[-1]) if not asset_price.empty else 0.0
+    _as1, _as2, _as3, _as4 = st.columns(4)
+    _as1.metric("Current Price",  f"{_currency}{_cur_price:,.2f}", help=f"Weight: {asset_weight:.2%}")
+    _as2.metric("Ann. Return",    f"{asset_stats['annual_return']:.2%}")
+    _as3.metric("Sharpe Ratio",   f"{asset_stats['sharpe_ratio']:.2f}")
+    _as4.metric("Volatility",     f"{asset_stats['volatility']:.2%}")
+
+    # ── Primary chart: Price History ────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("PRICE HISTORY", colour="#8b5cf6")
+    fig = px.line(slice_tf(asset_price, tf), color_discrete_sequence=["#8b5cf6"])
+    fig.update_traces(line=dict(width=1.8))
+    fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0), hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Slice returns to same timeframe
     asset_returns_tf = slice_tf(asset_returns, tf)
 
-    cA, cB = st.columns(2)
-    with cA:
-        section_header("Rolling Volatility (60D)")
+    # ── Row 2: Rolling Vol | Rolling Correlation ───────────
+    _r2c1, _r2c2 = st.columns(2)
+
+    with _r2c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("ROLLING VOLATILITY (60D)", colour="#8b5cf6")
         quick_chart(px.line(slice_tf(compute_rolling_volatility(asset_returns, 60), tf),
-                            color_discrete_sequence=["#f59e0b"]), 280)
-    with cB:
-        section_header("Rolling Correlation with Portfolio (60D)")
+                            color_discrete_sequence=["#f59e0b"]), 260)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r2c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("ROLLING CORRELATION WITH PORTFOLIO (60D)", colour="#8b5cf6")
         quick_chart(px.line(slice_tf(compute_rolling_correlation(asset_returns, portfolio_returns, 60), tf),
-                            color_discrete_sequence=["#8b5cf6"]), 280)
+                            color_discrete_sequence=["#8b5cf6"]), 260)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    section_header("Drawdown")
-    fig = px.area(compute_asset_drawdown(asset_returns_tf), color_discrete_sequence=["#ef4444"])
-    fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.1)")
-    quick_chart(fig, 260)
+    # ── Row 3: Drawdown | Dividend Tracking ───────────────
+    _r3c1, _r3c2 = st.columns(2)
 
-    # ── Dividend Tracking ──────────────────────────────────
-    section_header("Dividend Tracking", color="var(--positive)")
-    _asset_price_val = float(price_data[selected_asset].iloc[-1]) if selected_asset in price_data.columns else 0.0
-    _asset_qty_val   = float(df.set_index("Ticker")["Quantity"].get(selected_asset, 0))
-    _div_data = cached_dividend_data(selected_asset, _asset_qty_val, _asset_price_val)
+    with _r3c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("DRAWDOWN", colour="#8b5cf6")
+        fig = px.area(compute_asset_drawdown(asset_returns_tf), color_discrete_sequence=["#ef4444"])
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.1)")
+        quick_chart(fig, 260)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if _div_data["has_dividends"]:
-        _dc1, _dc2 = st.columns(2)
-        _dc1.metric("Dividend Yield",     f"{_div_data['yield']:.2%}")
-        _dc2.metric("Est. Annual Income", f"{_currency}{_div_data['annual_income']:,.2f}")
-        if not _div_data["history"].empty:
-            _div_fig = px.bar(
-                x=_div_data["history"].index,
-                y=_div_data["history"].values,
-                labels={"x": "Date", "y": "Dividend per Share"},
-                color_discrete_sequence=["#22c55e"],
-            )
-            _div_fig.update_layout(height=240, margin=dict(l=0,r=0,t=0,b=0))
-            st.plotly_chart(_div_fig, use_container_width=True)
-    else:
-        empty_state("💰", "No dividends", "This asset does not pay dividends")
+    with _r3c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("DIVIDEND TRACKING", colour="var(--positive)")
+        _asset_price_val = float(price_data[selected_asset].iloc[-1]) if selected_asset in price_data.columns else 0.0
+        _asset_qty_val   = float(df.set_index("Ticker")["Quantity"].get(selected_asset, 0))
+        _div_data = cached_dividend_data(selected_asset, _asset_qty_val, _asset_price_val)
+        if _div_data["has_dividends"]:
+            _dc1, _dc2 = st.columns(2)
+            _dc1.metric("Dividend Yield",     f"{_div_data['yield']:.2%}")
+            _dc2.metric("Est. Annual Income", f"{_currency}{_div_data['annual_income']:,.2f}")
+            if not _div_data["history"].empty:
+                _div_fig = px.bar(
+                    x=_div_data["history"].index,
+                    y=_div_data["history"].values,
+                    labels={"x": "Date", "y": "Dividend per Share"},
+                    color_discrete_sequence=["#22c55e"],
+                )
+                _div_fig.update_layout(height=180, margin=dict(l=0,r=0,t=0,b=0))
+                st.plotly_chart(_div_fig, use_container_width=True)
+        else:
+            empty_state("💰", "No dividends", "This asset does not pay dividends")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    section_header("Fundamental Metrics")
+    # ── Row 4: Fundamental Metrics ─────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("FUNDAMENTAL METRICS", colour="#8b5cf6")
     fund_df = get_asset_fundamental_table(selected_asset)
     fund_df["Metric"] = fund_df["Metric"].astype(str)
     _no_data = "Category" not in fund_df.columns or (fund_df["Metric"] == "No data available").any()
@@ -2584,31 +2754,34 @@ with tab5:
         prof = fund_df[fund_df["Category"]=="Profitability"].drop(columns="Category")
         liq  = fund_df[fund_df["Category"]=="Liquidity"].drop(columns="Category")
         val  = fund_df[fund_df["Category"]=="Valuation"].drop(columns="Category")
-
         c1, c2 = st.columns(2)
         with c1:
-            section_header("Profitability")
+            card_header("Profitability")
             if not prof.empty:
                 st.dataframe(prof.set_index("Metric"), use_container_width=True)
             else:
                 st.caption("No data")
         with c2:
-            section_header("Valuation")
+            card_header("Valuation")
             if not val.empty:
                 st.dataframe(val.set_index("Metric"), use_container_width=True)
             else:
                 st.caption("No data")
-        section_header("Liquidity & Solvency")
+        card_header("Liquidity & Solvency")
         if not liq.empty:
             st.dataframe(liq.set_index("Metric"), use_container_width=True)
         else:
             st.caption("No data")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Analyst Consensus ─────────────────────────────────────
-    section_header("Analyst Consensus", color="var(--accent)")
-    if _is_indian:
-        st.info("Analyst ratings are not available for NSE/BSE-listed stocks on the free data tier.")
-    else:
+    # ── Row 5: Analyst Consensus + Earnings + Peers ────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("ANALYST CONSENSUS", colour="#8b5cf6")
+    if not _is_indian and _FINNHUB_KEY:
         _fh_recs = cached_finnhub_recs(selected_asset, _FINNHUB_KEY)
         if not _fh_recs.empty:
             _rec_fig = go.Figure([
@@ -2618,54 +2791,59 @@ with tab5:
                 go.Bar(name="Sell",        x=_fh_recs["Period"], y=_fh_recs["Sell"],          marker_color="#ef4444"),
                 go.Bar(name="Strong Sell", x=_fh_recs["Period"], y=_fh_recs["Strong Sell"],  marker_color="#7f1d1d"),
             ])
-            _rec_fig.update_layout(barmode="stack", height=260,
-                                   margin=dict(l=0,r=0,t=0,b=0),
+            _rec_fig.update_layout(barmode="stack", height=260, margin=dict(l=0,r=0,t=0,b=0),
                                    legend=dict(orientation="h", y=1.02, x=0))
             st.plotly_chart(_rec_fig, use_container_width=True)
         else:
-            empty_state("📊", "Analyst ratings unavailable",
-                        f"No analyst coverage found for {selected_asset}")
-
-    # ── Earnings Surprises ────────────────────────────────────
-    section_header("Earnings Surprises", color="var(--purple)")
-    if _is_indian:
-        st.info("Earnings surprise history is not available for NSE/BSE-listed stocks on the free data tier.")
+            empty_state("📊", "Analyst ratings unavailable", f"No analyst coverage found for {selected_asset}")
     else:
-        _fh_earn = cached_finnhub_earnings(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else pd.DataFrame()
+        st.info("Analyst consensus not available for Indian listings or without API key.")
+
+    card_header("EARNINGS SURPRISES", colour="#8b5cf6")
+    if not _is_indian and _FINNHUB_KEY:
+        _fh_earn = cached_finnhub_earnings(selected_asset, _FINNHUB_KEY)
         if not _fh_earn.empty:
             def _style_result(val):
-                if val == "Beat":    return "color:#22c55e;font-weight:600"
-                if val == "Miss":    return "color:#ef4444;font-weight:600"
+                if val == "Beat": return "color:#22c55e;font-weight:600"
+                if val == "Miss": return "color:#ef4444;font-weight:600"
                 return "color:#f59e0b;font-weight:600"
-            st.dataframe(
-                _fh_earn.style.map(_style_result, subset=["Result"]),
-                use_container_width=True)
+            st.dataframe(_fh_earn.style.map(_style_result, subset=["Result"]), use_container_width=True)
         else:
-            empty_state("📊", "Earnings data unavailable",
-                        f"No earnings history found for {selected_asset}")
-
-    # ── Peer Companies ────────────────────────────────────────
-    section_header("Peer Companies", color="var(--text-secondary)")
-    if _is_indian:
-        st.info("Peer data is not available for NSE/BSE-listed stocks on the free data tier.")
+            empty_state("📈","Earnings data unavailable")
     else:
-        _peers = cached_finnhub_peers(selected_asset, _FINNHUB_KEY) if _FINNHUB_KEY else []
-        if _peers:
-            _peer_pills = "".join([
-                f'<span style="display:inline-block;padding:5px 12px;margin:4px;'
-                f'background:var(--bg-elevated);border:1px solid var(--border);'
-                f'border-radius:20px;font-size:12px;font-weight:600;'
-                f'color:var(--text-secondary);letter-spacing:0.02em;">{p}</span>'
-                for p in _peers if p != selected_asset
-            ])
-            st.markdown(f'<div style="margin:4px 0 8px;">{_peer_pills}</div>',
-                        unsafe_allow_html=True)
-        else:
-            st.caption("No peer data available.")
+        st.info("Earnings surprises not available for Indian listings or without API key.")
 
-    # ── WallStreetBets Sentiment ───────────────────────────
+    card_header("PEER COMPANIES", colour="#8b5cf6")
+    if not _is_indian and _FINNHUB_KEY:
+        _peers = cached_finnhub_peers(selected_asset, _FINNHUB_KEY)
+        if _peers:
+            st.write(", ".join(_peers))
+        else:
+            empty_state("👥","Peer data unavailable")
+    else:
+        st.info("Peer data not available for Indian listings.")
+
+    # ── Latest News ────────────────────────────────────────
+    card_header(f"LATEST NEWS — {selected_asset}", colour="#8b5cf6")
+    _news_df = cached_yf_news(selected_asset)
+    if not _news_df.empty:
+        for _, _nrow in _news_df.head(8).iterrows():
+            _ts_str = (_nrow["datetime"].strftime("%b %d, %Y")
+                       if pd.notna(_nrow["datetime"]) else "")
+            st.markdown(
+                f'<div style="padding:10px 0;border-bottom:1px solid var(--border-subtle);">'
+                f'<a href="{_nrow["url"]}" target="_blank" style="color:var(--text-primary);'
+                f'font-size:13px;font-weight:500;text-decoration:none;">{_nrow["headline"]}</a>'
+                f'<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">'
+                f'{_nrow["source"]} · {_ts_str}</div></div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        empty_state("📰","No news available",f"No recent news found for {selected_asset}")
+
+    # WSB Sentiment
     if not _is_indian:
-        section_header("Reddit / WallStreetBets", color="var(--accent)")
+        card_header("REDDIT / WALLSTREETBETS", colour="var(--accent)")
         _wsb_df  = cached_wsb(tickers_tuple)
         _clean_t = selected_asset.upper().replace(".NS", "").replace(".BO", "")
         _wsb_row = _wsb_df[_wsb_df["Ticker"] == _clean_t] if not _wsb_df.empty else pd.DataFrame()
@@ -2677,44 +2855,96 @@ with tab5:
             _ws3.metric("Sentiment", str(_w["Sentiment"]))
             _ws4.metric("Upvotes",   f"{int(_w['Upvotes']):,}")
         else:
-            empty_state("📊", f"{selected_asset} not trending on WSB",
-                        "Not in today's top mentions on r/wallstreetbets")
+            empty_state("💬","WSB data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── News Feed ──────────────────────────────────────────
-    section_header(f"Latest News — {selected_asset}")
-    _news_df = cached_yf_news(selected_asset)
-    if not _news_df.empty:
-        for _, _nrow in _news_df.head(12).iterrows():
-            _ts_str = (_nrow["datetime"].strftime("%d %b %Y, %H:%M UTC")
-                       if pd.notna(_nrow["datetime"]) else "")
-            st.markdown(f"""
-            <div style="padding:14px 18px;margin-bottom:8px;border-radius:var(--radius);
-                background:var(--bg-surface);border:1px solid var(--border);
-                border-left:3px solid var(--accent);">
-              <div style="font-size:13px;font-weight:600;color:var(--text-primary);
-                  margin-bottom:6px;line-height:1.5;">
-                <a href="{_nrow['url']}" target="_blank"
-                   style="color:var(--text-primary);text-decoration:none;">
-                  {_nrow['headline']}
-                </a>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <div style="font-size:10px;font-weight:600;color:var(--accent);
-                    text-transform:uppercase;letter-spacing:0.06em;">{_nrow['source']}</div>
-                {f'<div style="width:3px;height:3px;border-radius:50%;background:var(--text-muted);"></div>'
-                 f'<div style="font-size:10px;color:var(--text-muted);">{_ts_str}</div>'
-                 if _ts_str else ''}
-              </div>
-            </div>""", unsafe_allow_html=True)
+
+# ── MODULE: ENHANCEMENT ────────────────────────────────────
+elif _module == "enhancement":
+
+    # ── Page header ────────────────────────────────────────
+    st.markdown(
+        '<div style="margin-bottom:20px;">'
+        '<div style="font-size:10px;color:#ec4899;text-transform:uppercase;'
+        'letter-spacing:0.12em;margin-bottom:4px;">Enhancement</div>'
+        '<div style="font-size:22px;font-weight:700;color:var(--text-primary);'
+        'letter-spacing:-0.02em;">Portfolio Signals</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Pre-compute 3M relative performance
+    try:
+        with st.spinner("Computing 3M relative performance…"):
+            pm_df = cached_3m_relative_performance(tickers_tuple, benchmark)
+
+        def _rule_engine(x):
+            if pd.isna(x): return "No Data"
+            return "Sell" if x < -0.10 else "Buy" if x > 0.20 else "Hold"
+
+        pm_df["Action"] = pm_df["Relative Performance"].apply(_rule_engine)
+        pm_df = pm_df.sort_values("Relative Performance", ascending=False).reset_index(drop=True)
+        pm_df.index += 1
+        _buy_count  = int((pm_df["Action"] == "Buy").sum())
+        _sell_count = int((pm_df["Action"] == "Sell").sum())
+        _hold_count = int((pm_df["Action"] == "Hold").sum())
+        _top_buy_ticker = pm_df[pm_df["Action"] == "Buy"]["Ticker"].iloc[0] if _buy_count > 0 else "—"
+        _top_buy_sector = df.set_index("Ticker")["Sector"].get(_top_buy_ticker, "—") if _top_buy_ticker != "—" else "—"
+        _enh_data_ok = True
+    except Exception as _e:
+        pm_df = pd.DataFrame()
+        _buy_count = _sell_count = _hold_count = 0
+        _top_buy_ticker = "—"
+        _top_buy_sector = "—"
+        _enh_data_ok = False
+
+    # ── Stat row ────────────────────────────────────────────
+    _es1, _es2, _es3, _es4 = st.columns(4)
+    _es1.metric("Buy Signals",   str(_buy_count))
+    _es2.metric("Hold Signals",  str(_hold_count))
+    _es3.metric("Sell Signals",  str(_sell_count))
+    if _enh_data_ok and not pm_df.empty and "Relative Performance" in pm_df.columns:
+        _best_rel = pm_df.iloc[0]["Relative Performance"]
+        _es4.metric("Best Performer", pm_df.iloc[0]["Ticker"], delta=f"{_best_rel:+.2%}")
     else:
-        empty_state("📰", "No recent news", f"No news found for {selected_asset} in the last 30 days")
+        _es4.metric("Best Performer", "—")
 
+    # ── Primary chart: 3M Relative Performance ─────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("3-MONTH RELATIVE PERFORMANCE", colour="#ec4899")
+    if _enh_data_ok and not pm_df.empty and "Relative Performance" in pm_df.columns:
+        _bar_df = pm_df.reset_index(drop=True).copy()
+        _bar_df["Colour"] = _bar_df["Relative Performance"].apply(
+            lambda x: "#22c55e" if x > 0.20 else ("#ef4444" if x < -0.10 else "#f59e0b")
+        )
+        _hero_fig = go.Figure(go.Bar(
+            x=_bar_df["Ticker"],
+            y=_bar_df["Relative Performance"],
+            marker_color=_bar_df["Colour"],
+            hovertemplate="<b>%{x}</b><br>Relative Perf: %{y:.2%}<extra></extra>",
+        ))
+        _hero_fig.add_hline(y=0, line=dict(color="#64748b", width=1, dash="dot"))
+        _hero_fig.update_layout(
+            height=360, margin=dict(l=0,r=0,t=0,b=0),
+            yaxis=dict(tickformat=".0%", title="Relative Performance"),
+            xaxis=dict(title=""),
+        )
+        st.plotly_chart(_hero_fig, use_container_width=True)
+    else:
+        empty_state("📊", "Relative performance data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ── TAB 6: ENHANCEMENT ─────────────────────────────────────
-with tab6:
-
-    # ── Portfolio-wide Analyst Consensus ─────────────────────
-    section_header("Analyst Consensus — All Holdings", color="var(--accent)")
+    # ── Row 2: Analyst Consensus ───────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("ANALYST CONSENSUS — ALL HOLDINGS", colour="#ec4899")
     if _market == "IN":
         st.info("Portfolio analyst consensus is not available for Indian exchange listings on the free data tier.")
         _cons_df = pd.DataFrame()
@@ -2729,7 +2959,6 @@ with tab6:
         _cD.metric("Sell / Strong Sell",
                    int(_cons_df["Consensus"].isin(["Sell", "Strong Sell"]).sum()))
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
         def _style_cons(val):
             return {
                 "Strong Buy":  "color:#15803d;font-weight:700",
@@ -2745,40 +2974,9 @@ with tab6:
         empty_state("📊", "Analyst consensus unavailable",
                     "No analyst coverage found for these tickers")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    _screener_universe = "NIFTY 500" if _market == "IN" else "S&P 500"
-    st.markdown(f"""
-    <div style="padding:18px 22px;margin-bottom:24px;border-radius:var(--radius);
-        background:linear-gradient(135deg,var(--bg-surface) 0%,var(--bg-elevated) 100%);
-        border:1px solid var(--border);border-left:3px solid var(--accent);
-        box-shadow:var(--shadow);">
-      <div style="font-size:14px;font-weight:600;color:var(--text-primary);
-          margin-bottom:6px;letter-spacing:-0.01em;">Sector-Wise Enhancement Screener — {_screener_universe}</div>
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.65;">
-          Top performing sectors and their best stocks ranked by 6 &amp; 12-month returns.
-          Includes PE ratios and ROE. Refreshed every hour.</div>
-    </div>""", unsafe_allow_html=True)
-
-    section_header("3-Month Relative Performance — Current Holdings")
-    try:
-        with st.spinner("Computing 3M relative performance…"):
-            pm_df = cached_3m_relative_performance(tickers_tuple, benchmark)
-
-        def _rule_engine(x):
-            if pd.isna(x): return "No Data"
-            return "Sell" if x < -0.10 else "Buy" if x > 0.20 else "Hold"
-
-        pm_df["Action"] = pm_df["Relative Performance"].apply(_rule_engine)
-        pm_df = pm_df.sort_values("Relative Performance", ascending=False).reset_index(drop=True)
-        pm_df.index += 1
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Buy Signals",    (pm_df["Action"] == "Buy").sum())
-        c2.metric("Sell Signals",   (pm_df["Action"] == "Sell").sum())
-        c3.metric("Hold Positions", (pm_df["Action"] == "Hold").sum())
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
+    # Holdings signal table
+    card_header("HOLDINGS SIGNAL TABLE", colour="#ec4899")
+    if _enh_data_ok and not pm_df.empty:
         st.dataframe(
             style_pl(pm_df, ["Relative Performance"]).format({
                 "3M Return":            "{:.2%}",
@@ -2787,10 +2985,20 @@ with tab6:
             }),
             use_container_width=True,
         )
-    except Exception as e:
-        st.error(f"3M relative performance computation failed: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    # ── Row 3: Sector Screener ─────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    _screener_universe = "NIFTY 500" if _market == "IN" else "S&P 500"
+    card_header(f"SECTOR SCREENER — {_screener_universe}", colour="#ec4899")
+    st.markdown(f"""
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.65;margin-bottom:16px;">
+        Top performing sectors and their best stocks ranked by 6 &amp; 12-month returns.
+        Includes PE ratios and ROE. Refreshed every hour.</div>""", unsafe_allow_html=True)
 
     with st.spinner("Analyzing sectors — may take ~15s on first load…"):
         sector_recs = cached_sector_recommendations(_market)
@@ -2798,7 +3006,7 @@ with tab6:
     if not sector_recs:
         empty_state("🔍","No sector opportunities identified","Try again later")
     else:
-        section_header("Top Sectors with Best Performers")
+        card_header("TOP SECTORS WITH BEST PERFORMERS", colour="#ec4899")
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
         def _fmt(x, fn):
@@ -2824,3 +3032,4 @@ with tab6:
                 cB.metric("Avg 12M Return", f"{avg12:.2%}")
                 cC.metric("Avg PE Ratio",   f"{sdf['PE Ratio'].mean():.2f}")
                 cD.metric("Avg ROE",        f"{sdf['ROE'].mean():.2%}")
+    st.markdown('</div>', unsafe_allow_html=True)
