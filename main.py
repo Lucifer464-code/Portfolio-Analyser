@@ -2195,7 +2195,7 @@ elif _module == "optimization":
             card_header("EQUAL RISK PARITY TARGET")
             try:
                 from optimizer import risk_contribution
-                _rc  = risk_contribution(optimal_weights.values, returns.cov().values * 252)
+                _rc  = risk_contribution(optimal_weights.values, returns[optimal_weights.index])
                 _rcd = pd.DataFrame({"Ticker": optimal_weights.index, "Risk Contribution": _rc})
                 _rcd = _rcd.sort_values("Risk Contribution", ascending=False)
                 _rcf = px.bar(_rcd, x="Ticker", y="Risk Contribution",

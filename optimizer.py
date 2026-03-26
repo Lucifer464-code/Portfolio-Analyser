@@ -202,6 +202,16 @@ def risk_contribution(weights: np.ndarray, returns: pd.DataFrame) -> pd.Series:
 
 
 # ==========================================================
+# DIVERSIFICATION RATIO
+# ==========================================================
+
+def diversification_ratio(weights: np.ndarray, cov: np.ndarray, vols: np.ndarray) -> float:
+    weighted_avg_vol = float(np.dot(weights, vols))
+    port_vol = float(np.sqrt(weights @ cov @ weights))
+    return weighted_avg_vol / port_vol if port_vol > 0 else 1.0
+
+
+# ==========================================================
 # MONTE CARLO EFFICIENT FRONTIER
 # ==========================================================
 
