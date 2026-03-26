@@ -152,6 +152,8 @@ body::before {
     radial-gradient(ellipse at 65% 5%,  rgba(236,72,153,0.05)  0%, transparent 40%);
   pointer-events: none;
   z-index: -1;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 body::after {
@@ -164,6 +166,8 @@ body::after {
   background-size: 28px 28px;
   pointer-events: none;
   z-index: -1;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .main, .block-container {
@@ -214,9 +218,7 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !imp
 
 /* Sidebar: fixed width, page shifts naturally */
 [data-testid="stSidebar"] {
-  background: rgba(14,12,22,0.92) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
+  background: #0e0c16 !important;
   border-right: 1px solid rgba(139,92,246,0.14) !important;
   width: 220px !important;
   min-width: 220px !important;
