@@ -474,6 +474,11 @@ hr {
   margin: 1.25rem 0 !important;
 }
 
+/* Hide Streamlit header toolbar */
+header[data-testid="stHeader"] {
+  display: none !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 # ==========================================================
