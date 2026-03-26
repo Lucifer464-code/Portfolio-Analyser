@@ -1574,11 +1574,14 @@ if _module == "overview":
     _max_dd = float(drawdown_series.min()) if not drawdown_series.empty else 0.0
     _s1, _s2, _s3, _s4 = st.columns(4)
     _s1.metric("Total Value",   f"{_currency}{total_value:,.0f}",
-               f"Invested {_currency}{amount_invested:,.0f}")
-    _s2.metric("Total Return",  f"{_unreal_pct:+.2%}",
-               f"{_currency}{unrealized_gain:+,.0f}")
-    _s3.metric("Health Score",  f"{health_score:.0f}/100",
-               f"XIRR {_xirr_display}")
+               f"Invested {_currency}{amount_invested:,.0f}", delta_color="off")
+    _gain_delta = (f"-{_currency}{abs(unrealized_gain):,.0f}" if unrealized_gain < 0
+                   else f"+{_currency}{unrealized_gain:,.0f}")
+    _s2.metric("Total Return",  f"{_unreal_pct:+.2%}", _gain_delta)
+    if portfolio_xirr and not np.isnan(portfolio_xirr):
+        _s3.metric("Health Score", f"{health_score:.0f}/100", f"{portfolio_xirr:+.2%} XIRR")
+    else:
+        _s3.metric("Health Score", f"{health_score:.0f}/100", "XIRR N/A", delta_color="off")
     _s4.metric("Max Drawdown",  f"{_max_dd:.2%}")
 
     # ── Primary chart: Portfolio Composition Treemap ────────
