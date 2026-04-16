@@ -1229,6 +1229,9 @@ except Exception:
     _FRED_KEY    = "1887e2a54d8ecf8a37c4df1799d4b3bb"
 
 benchmark      = st.session_state.get("benchmark", "^GSPC")
+_bm_display    = {"^GSPC": "S&P 500", "^NSEI": "NIFTY 50", "^CRSLDX": "NIFTY 500",
+                   "^BSESN": "SENSEX", "^DJI": "Dow Jones", "^IXIC": "NASDAQ"}
+benchmark_name = _bm_display.get(benchmark, benchmark)
 risk_profile   = "Moderate"
 max_weight_pct = st.session_state.get("max_weight_pct", 15.0)
 max_weight     = max_weight_pct / 100
