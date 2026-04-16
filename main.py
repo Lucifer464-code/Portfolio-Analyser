@@ -1618,77 +1618,6 @@ if _module == "overview":
         coloraxis_showscale=False,
     )
     st.plotly_chart(_tm_fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Secondary grid: Sector Allocation | Asset Allocation ─
-    _r2c1, _r2c2 = st.columns(2)
-
-    with _r2c1:
-        st.markdown(
-            '<div style="background:var(--bg-card);border:1px solid var(--border);'
-            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
-            unsafe_allow_html=True,
-        )
-        card_header("SECTOR ALLOCATION", colour="var(--tab-overview)")
-        _sec_alloc = df.groupby("Sector")["Market Value"].sum().reset_index()
-        if not _sec_alloc.empty:
-            _sec_fig = px.pie(_sec_alloc, names="Sector", values="Market Value", hole=0.55)
-            _sec_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
-            _sec_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
-                                   legend=dict(orientation="v", x=1.02))
-            st.plotly_chart(_sec_fig, use_container_width=True)
-        else:
-            empty_state("🏭", "Sector data unavailable")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with _r2c2:
-        st.markdown(
-            '<div style="background:var(--bg-card);border:1px solid var(--border);'
-            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
-            unsafe_allow_html=True,
-        )
-        card_header("ASSET ALLOCATION", colour="var(--tab-overview)")
-        _at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
-        if not _at.empty:
-            _at_fig = px.pie(_at, names="Asset Type", values="Market Value", hole=0.55)
-            _at_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
-            _at_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
-                                  legend=dict(orientation="v", x=1.02))
-            st.plotly_chart(_at_fig, use_container_width=True)
-        else:
-            empty_state("📦", "Asset type data unavailable")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Holdings ────────────────────────────────────────────
-    st.markdown(
-        '<div style="background:var(--bg-card);border:1px solid var(--border);'
-        'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
-        unsafe_allow_html=True,
-    )
-    card_header("HOLDINGS")
-    cached_count = df["_Price Cached"].sum() if "_Price Cached" in df.columns else 0
-    if cached_count > 0:
-        st.warning(f"⏱️ {cached_count} price(s) using cached values. Refresh to update.", icon="⏱️")
-
-    holdings_display = df[["Ticker", "Quantity", "Avg Cost", "Current Price",
-                            "Current Weight", "Unrealised P/L", "P/L %"]].copy()
-    holdings_display = holdings_display.sort_values("Current Weight", ascending=False).reset_index(drop=True)
-    holdings_display.index += 1
-
-    def _cache_tag(t):
-        row = df[df["Ticker"] == t]["_Price Cached"].values
-        return f"{t} ⏱️" if len(row) > 0 and row[0] else t
-    holdings_display["Ticker"] = holdings_display["Ticker"].apply(_cache_tag)
-
-    styled = style_pl(holdings_display, ["Unrealised P/L", "P/L %"]).format({
-        "Quantity":      "{:,.0f}",
-        "Avg Cost":      f"{_currency}{{:,.2f}}",
-        "Current Price": f"{_currency}{{:,.2f}}",
-        "Unrealised P/L":f"{_currency}{{:,.2f}}",
-        "Current Weight":"{:.2%}",
-        "P/L %":         "{:.2%}",
-    })
-    st.dataframe(styled, use_container_width=True)
 
     # ── Per-stock expandable detail cards ──────────────────
     _sorted_tickers = df.sort_values("Current Weight", ascending=False)["Ticker"].tolist()
@@ -1810,6 +1739,77 @@ if _module == "overview":
                     f'color:var(--tab-overview);margin-bottom:8px;">Key Stats</div>'
                     f'{_stat_html}</div>', unsafe_allow_html=True)
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Secondary grid: Sector Allocation | Asset Allocation ─
+    _r2c1, _r2c2 = st.columns(2)
+
+    with _r2c1:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("SECTOR ALLOCATION", colour="var(--tab-overview)")
+        _sec_alloc = df.groupby("Sector")["Market Value"].sum().reset_index()
+        if not _sec_alloc.empty:
+            _sec_fig = px.pie(_sec_alloc, names="Sector", values="Market Value", hole=0.55)
+            _sec_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
+            _sec_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                   legend=dict(orientation="v", x=1.02))
+            st.plotly_chart(_sec_fig, use_container_width=True)
+        else:
+            empty_state("🏭", "Sector data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _r2c2:
+        st.markdown(
+            '<div style="background:var(--bg-card);border:1px solid var(--border);'
+            'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+            unsafe_allow_html=True,
+        )
+        card_header("ASSET ALLOCATION", colour="var(--tab-overview)")
+        _at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
+        if not _at.empty:
+            _at_fig = px.pie(_at, names="Asset Type", values="Market Value", hole=0.55)
+            _at_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
+            _at_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
+                                  legend=dict(orientation="v", x=1.02))
+            st.plotly_chart(_at_fig, use_container_width=True)
+        else:
+            empty_state("📦", "Asset type data unavailable")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Holdings ────────────────────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid var(--tab-overview);border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("HOLDINGS")
+    cached_count = df["_Price Cached"].sum() if "_Price Cached" in df.columns else 0
+    if cached_count > 0:
+        st.warning(f"⏱️ {cached_count} price(s) using cached values. Refresh to update.", icon="⏱️")
+
+    holdings_display = df[["Ticker", "Quantity", "Avg Cost", "Current Price",
+                            "Current Weight", "Unrealised P/L", "P/L %"]].copy()
+    holdings_display = holdings_display.sort_values("Current Weight", ascending=False).reset_index(drop=True)
+    holdings_display.index += 1
+
+    def _cache_tag(t):
+        row = df[df["Ticker"] == t]["_Price Cached"].values
+        return f"{t} ⏱️" if len(row) > 0 and row[0] else t
+    holdings_display["Ticker"] = holdings_display["Ticker"].apply(_cache_tag)
+
+    styled = style_pl(holdings_display, ["Unrealised P/L", "P/L %"]).format({
+        "Quantity":      "{:,.0f}",
+        "Avg Cost":      f"{_currency}{{:,.2f}}",
+        "Current Price": f"{_currency}{{:,.2f}}",
+        "Unrealised P/L":f"{_currency}{{:,.2f}}",
+        "Current Weight":"{:.2%}",
+        "P/L %":         "{:.2%}",
+    })
+    st.dataframe(styled, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ── MODULE: RISK ───────────────────────────────────────────
