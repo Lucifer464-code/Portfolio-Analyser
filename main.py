@@ -1616,18 +1616,6 @@ if _module == "overview":
         else:
             _tm_stats[_tk] = dict(ann_ret="—", vol="—", sharpe="—", beta="—")
 
-    _tm_df["Name"]       = _tm_df["Ticker"].map(df.set_index("Ticker")["Name"])
-    _tm_df["Price Fmt"]  = _tm_df["Current Price"].map(lambda x: f"{_currency}{x:,.2f}")
-    _tm_df["Cost Fmt"]   = _tm_df["Avg Cost"].map(lambda x: f"{_currency}{x:,.2f}")
-    _tm_df["Value Fmt"]  = _tm_df["Market Value"].map(lambda x: f"{_currency}{x:,.0f}")
-    _tm_df["PL Fmt"]     = _tm_df["Unrealised P/L"].map(lambda x: f"{_currency}{x:+,.2f}")
-    _tm_df["Wt Fmt"]     = _tm_df["Current Weight"].map(lambda x: f"{x:.2%}")
-    _tm_df["Qty Fmt"]    = _tm_df["Quantity"].map(lambda x: f"{x:,.0f}")
-    _tm_df["Ann Return"] = _tm_df["Ticker"].map(lambda t: _tm_stats[t]["ann_ret"])
-    _tm_df["Volatility"] = _tm_df["Ticker"].map(lambda t: _tm_stats[t]["vol"])
-    _tm_df["Sharpe"]     = _tm_df["Ticker"].map(lambda t: _tm_stats[t]["sharpe"])
-    _tm_df["Beta"]       = _tm_df["Ticker"].map(lambda t: _tm_stats[t]["beta"])
-
     _tm_fig = px.treemap(
         _tm_df,
         path=[px.Constant("Portfolio"), "Sector", "Ticker"],
@@ -1635,33 +1623,54 @@ if _module == "overview":
         color="colour",
         color_continuous_scale=["#ef4444", "#1e1e2e", "#22c55e"],
         color_continuous_midpoint=0,
-        custom_data=["P/L % Label", "Unrealised P/L", "Name", "Price Fmt",
-                     "Cost Fmt", "Value Fmt", "PL Fmt", "Wt Fmt", "Qty Fmt",
-                     "Ann Return", "Volatility", "Sharpe", "Beta"],
+        custom_data=["P/L % Label", "Unrealised P/L"],
     )
-    # Normal view: compact label with P/L %
-    # Zoomed-in (leaf) view: Plotly uses the same template but fills the full area,
-    # so the rich text becomes readable when the cell fills the screen
+
+    # Inject rich text directly into each trace's `text` array.
+    # px.treemap with path= creates parent traces (Portfolio, Sector) that lack
+    # per-stock customdata, so texttemplate with customdata refs crashes on them.
+    # Instead we set text per-label and use textinfo="text".
+    _name_map = df.set_index("Ticker")["Name"].to_dict()
+    for _trace in _tm_fig.data:
+        _new_texts = []
+        _new_hovers = []
+        _labels = _trace.labels if _trace.labels is not None else []
+        _vals   = _trace.values if _trace.values is not None else []
+        for _i, _lbl in enumerate(_labels):
+            if _lbl in df["Ticker"].values:
+                _r = df[df["Ticker"] == _lbl].iloc[0]
+                _s = _tm_stats.get(_lbl, {})
+                _nm = _name_map.get(_lbl, _lbl)
+                _pl_l = f"{_r['P/L %']:+.2%}" if pd.notna(_r["P/L %"]) else "N/A"
+                _new_texts.append(
+                    f"{_lbl}\n{_nm}\n\n"
+                    f"Price: {_currency}{_r['Current Price']:,.2f}  |  "
+                    f"Avg Cost: {_currency}{_r['Avg Cost']:,.2f}  |  "
+                    f"Qty: {_r['Quantity']:,.0f}\n"
+                    f"Value: {_currency}{_r['Market Value']:,.0f}  |  "
+                    f"P/L: {_currency}{_r['Unrealised P/L']:+,.2f} ({_pl_l})  |  "
+                    f"Weight: {_r['Current Weight']:.2%}\n\n"
+                    f"Ann. Return: {_s.get('ann_ret','—')}  |  "
+                    f"Volatility: {_s.get('vol','—')}  |  "
+                    f"Sharpe: {_s.get('sharpe','—')}  |  "
+                    f"Beta: {_s.get('beta','—')}"
+                )
+                _new_hovers.append(
+                    f"<b>{_lbl}</b> — {_nm}<br>"
+                    f"Value: {_currency}{_r['Market Value']:,.0f}<br>"
+                    f"P/L: {_currency}{_r['Unrealised P/L']:+,.2f} ({_pl_l})<br>"
+                    f"Weight: {_r['Current Weight']:.2%}<extra></extra>"
+                )
+            else:
+                _new_texts.append(_lbl)
+                _v = _vals[_i] if _i < len(_vals) else 0
+                _new_hovers.append(f"<b>{_lbl}</b><br>Value: {_currency}{_v:,.0f}<extra></extra>")
+        _trace.text = _new_texts
+        _trace.textinfo = "text"
+        _trace.hovertemplate = _new_hovers
+
     _tm_fig.update_traces(
-        texttemplate=(
-            "<b>%{label}</b><br>"
-            "%{customdata[2]}<br>"
-            "<br>"
-            "Price: %{customdata[3]}  |  Avg Cost: %{customdata[4]}  |  Qty: %{customdata[8]}<br>"
-            "Value: %{customdata[5]}  |  P/L: %{customdata[6]} (%{customdata[0]})  |  Weight: %{customdata[7]}<br>"
-            "<br>"
-            "Ann. Return: %{customdata[9]}  |  Volatility: %{customdata[10]}  |  "
-            "Sharpe: %{customdata[11]}  |  Beta: %{customdata[12]}"
-        ),
-        textfont=dict(size=13),
-        insidetextanchor="middle",
-        hovertemplate=(
-            "<b>%{label}</b> — %{customdata[2]}<br>"
-            "Value: %{customdata[5]}<br>"
-            "P/L: %{customdata[6]} (%{customdata[0]})<br>"
-            "Weight: %{customdata[7]}"
-            "<extra></extra>"
-        ),
+        textfont=dict(size=12),
         marker=dict(line=dict(width=1.5, color="#09080f")),
     )
     _tm_fig.update_layout(
