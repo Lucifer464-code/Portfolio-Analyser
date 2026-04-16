@@ -1595,27 +1595,10 @@ if _module == "overview":
     )
     card_header("PORTFOLIO COMPOSITION", colour="var(--tab-overview)")
 
-    # ── Build enriched treemap data with per-stock stats ──
-    _tm_df = df[["Ticker", "Market Value", "Unrealised P/L", "P/L %",
-                  "Sector", "Current Price", "Avg Cost", "Quantity", "Current Weight"]].copy()
+    # ── Treemap ───────────────────────────────────────────
+    _tm_df = df[["Ticker", "Market Value", "Unrealised P/L", "P/L %", "Sector"]].copy()
     _tm_df["P/L % Label"] = _tm_df["P/L %"].map(lambda x: f"{x:+.2%}" if pd.notna(x) else "N/A")
     _tm_df["colour"] = _tm_df["P/L %"].apply(lambda x: x if pd.notna(x) else 0.0)
-
-    # Compute per-asset risk stats for display inside the treemap
-    _tm_stats = {}
-    for _tk in _tm_df["Ticker"]:
-        _ar = returns[_tk] if _tk in returns.columns else None
-        if _ar is not None and len(_ar.dropna()) > 5:
-            _arc = _ar.dropna()
-            _av  = _arc.mean() * TRADING_DAYS
-            _vol = _arc.std() * np.sqrt(TRADING_DAYS)
-            _sh  = ((_av - _rf_rate) / _vol) if _vol > 0 else 0
-            _bt  = compute_asset_beta(_ar, portfolio_returns)
-            _tm_stats[_tk] = dict(ann_ret=f"{_av:+.2%}", vol=f"{_vol:.2%}",
-                                  sharpe=f"{_sh:.2f}", beta=f"{_bt:.2f}")
-        else:
-            _tm_stats[_tk] = dict(ann_ret="—", vol="—", sharpe="—", beta="—")
-
     _tm_fig = px.treemap(
         _tm_df,
         path=[px.Constant("Portfolio"), "Sector", "Ticker"],
@@ -1625,59 +1608,135 @@ if _module == "overview":
         color_continuous_midpoint=0,
         custom_data=["P/L % Label", "Unrealised P/L"],
     )
-
-    # Inject rich text directly into each trace's `text` array.
-    # px.treemap with path= creates parent traces (Portfolio, Sector) that lack
-    # per-stock customdata, so texttemplate with customdata refs crashes on them.
-    # Instead we set text per-label and use textinfo="text".
-    _name_map = df.set_index("Ticker")["Name"].to_dict()
-    for _trace in _tm_fig.data:
-        _new_texts = []
-        _new_hovers = []
-        _labels = _trace.labels if _trace.labels is not None else []
-        _vals   = _trace.values if _trace.values is not None else []
-        for _i, _lbl in enumerate(_labels):
-            if _lbl in df["Ticker"].values:
-                _r = df[df["Ticker"] == _lbl].iloc[0]
-                _s = _tm_stats.get(_lbl, {})
-                _nm = _name_map.get(_lbl, _lbl)
-                _pl_l = f"{_r['P/L %']:+.2%}" if pd.notna(_r["P/L %"]) else "N/A"
-                _new_texts.append(
-                    f"{_lbl}\n{_nm}\n\n"
-                    f"Price: {_currency}{_r['Current Price']:,.2f}  |  "
-                    f"Avg Cost: {_currency}{_r['Avg Cost']:,.2f}  |  "
-                    f"Qty: {_r['Quantity']:,.0f}\n"
-                    f"Value: {_currency}{_r['Market Value']:,.0f}  |  "
-                    f"P/L: {_currency}{_r['Unrealised P/L']:+,.2f} ({_pl_l})  |  "
-                    f"Weight: {_r['Current Weight']:.2%}\n\n"
-                    f"Ann. Return: {_s.get('ann_ret','—')}  |  "
-                    f"Volatility: {_s.get('vol','—')}  |  "
-                    f"Sharpe: {_s.get('sharpe','—')}  |  "
-                    f"Beta: {_s.get('beta','—')}"
-                )
-                _new_hovers.append(
-                    f"<b>{_lbl}</b> — {_nm}<br>"
-                    f"Value: {_currency}{_r['Market Value']:,.0f}<br>"
-                    f"P/L: {_currency}{_r['Unrealised P/L']:+,.2f} ({_pl_l})<br>"
-                    f"Weight: {_r['Current Weight']:.2%}<extra></extra>"
-                )
-            else:
-                _new_texts.append(_lbl)
-                _v = _vals[_i] if _i < len(_vals) else 0
-                _new_hovers.append(f"<b>{_lbl}</b><br>Value: {_currency}{_v:,.0f}<extra></extra>")
-        _trace.text = _new_texts
-        _trace.textinfo = "text"
-        _trace.hovertemplate = _new_hovers
-
     _tm_fig.update_traces(
-        textfont=dict(size=12),
+        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+        hovertemplate="<b>%{label}</b><br>Value: %{value:,.0f}<br>P/L: %{customdata[0]}<extra></extra>",
         marker=dict(line=dict(width=1.5, color="#09080f")),
     )
     _tm_fig.update_layout(
-        height=420, margin=dict(l=0, r=0, t=0, b=0),
+        height=360, margin=dict(l=0, r=0, t=0, b=0),
         coloraxis_showscale=False,
     )
     st.plotly_chart(_tm_fig, use_container_width=True)
+
+    # ── Stock detail selector (inside the same card) ──────
+    _sorted_tickers = df.sort_values("Current Weight", ascending=False)["Ticker"].tolist()
+    _tk_labels = {t: f"{t} — {df[df['Ticker']==t].iloc[0].get('Name', t)}" for t in _sorted_tickers}
+    _selected_tk = st.selectbox(
+        "Select a stock to view details",
+        options=_sorted_tickers,
+        format_func=lambda t: _tk_labels[t],
+        key="comp_stock_select",
+    )
+
+    if _selected_tk:
+        _row    = df[df["Ticker"] == _selected_tk].iloc[0]
+        _pl_pct = _row["P/L %"]
+        _pl_col = "#22c55e" if _pl_pct >= 0 else "#ef4444"
+        _pl_sym = "+" if _pl_pct >= 0 else ""
+        _name   = _row.get("Name") or _selected_tk
+        _sector = _row.get("Sector") or "—"
+
+        # Banner
+        st.markdown(
+            f'<div style="margin:12px 0;padding:14px 18px;border-radius:var(--radius-sm);'
+            f'background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-surface) 100%);'
+            f'border:1px solid var(--border);border-left:3px solid var(--tab-overview);">'
+            f'<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:2px;">'
+            f'{_selected_tk} — {_name}</div>'
+            f'<div style="font-size:11px;color:var(--text-muted);">{_sector}</div></div>',
+            unsafe_allow_html=True)
+
+        # Metric cards
+        _ec1, _ec2, _ec3, _ec4 = st.columns(4)
+        for _col, _label, _val in [
+            (_ec1, "Current Price", f"{_currency}{_row['Current Price']:,.2f}"),
+            (_ec2, "Unrealised P/L", f"{_pl_sym}{_currency}{_row['Unrealised P/L']:,.2f}"),
+            (_ec3, "Market Value",   f"{_currency}{_row['Market Value']:,.0f}"),
+            (_ec4, "P/L %",          f"{_pl_sym}{_pl_pct:.2%}"),
+        ]:
+            _vc = _pl_col if _label in ("Unrealised P/L", "P/L %") else "var(--text-primary)"
+            with _col:
+                st.markdown(
+                    f'<div style="padding:10px 14px;background:var(--bg-surface);'
+                    f'border-radius:var(--radius-sm);border:1px solid var(--border);">'
+                    f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;'
+                    f'letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;">{_label}</div>'
+                    f'<div style="font-size:20px;font-weight:700;color:{_vc};">{_val}</div></div>',
+                    unsafe_allow_html=True)
+
+        # Price chart + Key stats
+        _chart_col, _stats_col = st.columns([2, 1])
+
+        with _chart_col:
+            if _selected_tk in price_data.columns:
+                _ap = price_data[_selected_tk].dropna().tail(90)
+                if len(_ap) > 1:
+                    _up = _ap.iloc[-1] >= _ap.iloc[0]
+                    _line_col = "#22c55e" if _up else "#ef4444"
+                    _fill_col = "rgba(34,197,94,0.08)" if _up else "rgba(239,68,68,0.08)"
+                    _pfig = go.Figure()
+                    _pfig.add_trace(go.Scatter(
+                        x=_ap.index, y=_ap.values, mode="lines",
+                        line=dict(color=_line_col, width=2),
+                        fill="tozeroy", fillcolor=_fill_col,
+                        hovertemplate="%{x|%b %d}<br>" + _currency + "%{y:,.2f}<extra></extra>",
+                    ))
+                    _pfig.update_layout(
+                        height=200, margin=dict(l=0, r=0, t=24, b=0),
+                        title=dict(text="90-Day Price", font=dict(size=11, color="#8b7fc0"),
+                                   x=0, xanchor="left"),
+                        yaxis=dict(gridcolor="rgba(255,255,255,0.04)",
+                                   zerolinecolor="rgba(255,255,255,0.06)"),
+                        xaxis=dict(gridcolor="rgba(255,255,255,0.04)"),
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(_pfig, use_container_width=True)
+                else:
+                    st.caption("Insufficient price data for chart.")
+            else:
+                st.caption("Price data unavailable.")
+
+        with _stats_col:
+            _asset_ret = returns[_selected_tk] if _selected_tk in returns.columns else None
+            _ann_ret = _ann_vol = _sharpe = _beta = "—"
+            _ret_col = "var(--text-primary)"
+            if _asset_ret is not None and len(_asset_ret.dropna()) > 5:
+                _ar_clean = _asset_ret.dropna()
+                _ann_ret_v = _ar_clean.mean() * TRADING_DAYS
+                _ann_vol_v = _ar_clean.std() * np.sqrt(TRADING_DAYS)
+                _sharpe_v  = ((_ann_ret_v - _rf_rate) / _ann_vol_v) if _ann_vol_v > 0 else 0
+                _beta_v    = compute_asset_beta(_asset_ret, portfolio_returns)
+                _ann_ret = f"{_ann_ret_v:+.2%}"
+                _ann_vol = f"{_ann_vol_v:.2%}"
+                _sharpe  = f"{_sharpe_v:.2f}"
+                _beta    = f"{_beta_v:.2f}"
+                _ret_col = "#22c55e" if _ann_ret_v >= 0 else "#ef4444"
+
+            _stat_rows = [
+                ("Ann. Return", _ann_ret, _ret_col),
+                ("Volatility",  _ann_vol, "var(--text-primary)"),
+                ("Sharpe Ratio",_sharpe,  "var(--text-primary)"),
+                ("Beta",        _beta,    "var(--text-primary)"),
+                ("Avg Cost",    f"{_currency}{_row['Avg Cost']:,.2f}", "var(--text-primary)"),
+                ("Quantity",    f"{_row['Quantity']:,.0f}", "var(--text-primary)"),
+            ]
+            _stat_html = ""
+            for _sl, _sv, _sc in _stat_rows:
+                _stat_html += (
+                    f'<div style="display:flex;justify-content:space-between;padding:7px 0;'
+                    f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+                    f'<span style="font-size:11px;color:var(--text-muted);">{_sl}</span>'
+                    f'<span style="font-size:12px;font-weight:600;color:{_sc};">{_sv}</span></div>'
+                )
+            st.markdown(
+                f'<div style="padding:12px 14px;background:var(--bg-surface);'
+                f'border-radius:var(--radius-sm);border:1px solid var(--border);margin-top:4px;">'
+                f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;'
+                f'color:var(--tab-overview);margin-bottom:8px;">Key Stats</div>'
+                f'{_stat_html}</div>', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Secondary grid: Sector Allocation | Asset Allocation ─
