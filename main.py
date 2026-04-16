@@ -48,7 +48,6 @@ from external_apis import (
     finnhub_stock_metrics, finnhub_company_profile, finnhub_peers, finnhub_company_news,
     fred_macro_snapshot, india_macro_snapshot, yfinance_news,
     sec_insider_transactions,
-    wsb_sentiment,
 )
 
 # ── Page config ────────────────────────────────────────────
@@ -1155,9 +1154,6 @@ def cached_finnhub_peers(ticker, key):       return finnhub_peers(ticker, key)
 def cached_finnhub_news(ticker, key):        return finnhub_company_news(ticker, key)
 @st.cache_data(ttl=86400, show_spinner=False)
 def cached_sec_insider(ticker):              return sec_insider_transactions(ticker)
-@st.cache_data(ttl=1800,  show_spinner=False)
-def cached_wsb(tickers):                     return wsb_sentiment(list(tickers))
-
 @st.cache_data(ttl=3600,  show_spinner=False)
 def cached_liquidity_risk(tickers, quantities, market_values):
     import pandas as pd
@@ -2926,21 +2922,6 @@ elif _module == "asset_analytics":
     else:
         empty_state("📰","No news available",f"No recent news found for {selected_asset}")
 
-    # WSB Sentiment
-    if not _is_indian:
-        card_header("REDDIT / WALLSTREETBETS", colour="var(--accent)")
-        _wsb_df  = cached_wsb(tickers_tuple)
-        _clean_t = selected_asset.upper().replace(".NS", "").replace(".BO", "")
-        _wsb_row = _wsb_df[_wsb_df["Ticker"] == _clean_t] if not _wsb_df.empty else pd.DataFrame()
-        if not _wsb_row.empty:
-            _w = _wsb_row.iloc[0]
-            _ws1, _ws2, _ws3, _ws4 = st.columns(4)
-            _ws1.metric("WSB Rank",  f"#{int(_w['WSB Rank'])}")
-            _ws2.metric("Mentions",  f"{int(_w['Mentions']):,}")
-            _ws3.metric("Sentiment", str(_w["Sentiment"]))
-            _ws4.metric("Upvotes",   f"{int(_w['Upvotes']):,}")
-        else:
-            empty_state("💬","WSB data unavailable")
     st.markdown('</div>', unsafe_allow_html=True)
 
 
