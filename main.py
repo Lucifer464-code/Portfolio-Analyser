@@ -1644,27 +1644,14 @@ if _module == "overview":
     # so the rich text becomes readable when the cell fills the screen
     _tm_fig.update_traces(
         texttemplate=(
-            "<b style='font-size:16px'>%{label}</b>"
-            "<br><span style='opacity:0.7'>%{customdata[2]}</span>"
+            "<b>%{label}</b><br>"
+            "%{customdata[2]}<br>"
             "<br>"
-            "<br><span style='opacity:0.6'>Price:</span> %{customdata[3]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Avg Cost:</span> %{customdata[4]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Qty:</span> %{customdata[8]}"
-            "<br><span style='opacity:0.6'>Value:</span> %{customdata[5]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>P/L:</span> %{customdata[6]} (%{customdata[0]})"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Weight:</span> %{customdata[7]}"
+            "Price: %{customdata[3]}  |  Avg Cost: %{customdata[4]}  |  Qty: %{customdata[8]}<br>"
+            "Value: %{customdata[5]}  |  P/L: %{customdata[6]} (%{customdata[0]})  |  Weight: %{customdata[7]}<br>"
             "<br>"
-            "<br><span style='opacity:0.6'>Ann. Return:</span> %{customdata[9]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Volatility:</span> %{customdata[10]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Sharpe:</span> %{customdata[11]}"
-            "  <span style='opacity:0.4'>|</span>  "
-            "<span style='opacity:0.6'>Beta:</span> %{customdata[12]}"
+            "Ann. Return: %{customdata[9]}  |  Volatility: %{customdata[10]}  |  "
+            "Sharpe: %{customdata[11]}  |  Beta: %{customdata[12]}"
         ),
         textfont=dict(size=13),
         insidetextanchor="middle",
