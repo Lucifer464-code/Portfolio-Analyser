@@ -38,7 +38,7 @@ from enhancement_engine import (
 )
 from asset_analytics_engine import (
     get_asset_key_stats, compute_rolling_volatility, compute_rolling_correlation,
-    compute_asset_drawdown, compute_asset_beta, get_asset_fundamental_table, get_dividend_data,
+    compute_asset_drawdown, get_asset_fundamental_table, get_dividend_data,
 )
 from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics, compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution
 from rebalance_engine import simulate_cash_injection, simulate_trade
@@ -1586,7 +1586,7 @@ if _module == "overview":
         _s3.metric("Health Score", f"{health_score:.0f}/100", "XIRR N/A", delta_color="off")
     _s4.metric("Max Drawdown",  f"{_max_dd:.2%}")
 
-    # ── Primary chart: Portfolio Composition Treemap ────────
+    # ── Primary: Heatmap Grid ─────────────────────────────
     st.markdown(
         '<div style="background:var(--bg-card);border:1px solid var(--border);'
         'border-top:2px solid var(--tab-overview);border-radius:var(--radius);'
@@ -1595,148 +1595,104 @@ if _module == "overview":
     )
     card_header("PORTFOLIO COMPOSITION", colour="var(--tab-overview)")
 
-    # ── Treemap ───────────────────────────────────────────
-    _tm_df = df[["Ticker", "Market Value", "Unrealised P/L", "P/L %", "Sector"]].copy()
-    _tm_df["P/L % Label"] = _tm_df["P/L %"].map(lambda x: f"{x:+.2%}" if pd.notna(x) else "N/A")
-    _tm_df["colour"] = _tm_df["P/L %"].apply(lambda x: x if pd.notna(x) else 0.0)
-    _tm_fig = px.treemap(
-        _tm_df,
-        path=[px.Constant("Portfolio"), "Sector", "Ticker"],
-        values="Market Value",
-        color="colour",
-        color_continuous_scale=["#ef4444", "#1e1e2e", "#22c55e"],
-        color_continuous_midpoint=0,
-        custom_data=["P/L % Label", "Unrealised P/L"],
-    )
-    _tm_fig.update_traces(
-        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
-        hovertemplate="<b>%{label}</b><br>Value: %{value:,.0f}<br>P/L: %{customdata[0]}<extra></extra>",
-        marker=dict(line=dict(width=1.5, color="#09080f")),
-    )
-    _tm_fig.update_layout(
-        height=360, margin=dict(l=0, r=0, t=0, b=0),
-        coloraxis_showscale=False,
-    )
-    st.plotly_chart(_tm_fig, use_container_width=True)
+    _hm_df = df[["Ticker", "Market Value", "Current Weight", "Current Price",
+                  "Unrealised P/L", "P/L %", "Sector"]].copy()
+    _hm_df["Name"] = df["Name"]
+    _hm_df = _hm_df.sort_values("Current Weight", ascending=False).reset_index(drop=True)
 
-    # ── Stock detail selector (inside the same card) ──────
-    _sorted_tickers = df.sort_values("Current Weight", ascending=False)["Ticker"].tolist()
-    _tk_labels = {t: f"{t} — {df[df['Ticker']==t].iloc[0].get('Name', t)}" for t in _sorted_tickers}
-    _selected_tk = st.selectbox(
-        "Select a stock to view details",
-        options=_sorted_tickers,
-        format_func=lambda t: _tk_labels[t],
-        key="comp_stock_select",
-    )
+    def _pl_bg(pl_pct):
+        """Return a background colour that blends from red through neutral to green."""
+        _clamped = max(-0.5, min(0.5, pl_pct))
+        if _clamped >= 0:
+            _t = _clamped / 0.5
+            _r = int(30 + (34 - 30) * _t)
+            _g = int(30 + (60 - 30) * _t)
+            _b = int(46 + (34 - 46) * _t)
+            _border = f"rgba(34,197,94,{0.15 + _t * 0.35:.2f})"
+        else:
+            _t = abs(_clamped) / 0.5
+            _r = int(30 + (60 - 30) * _t)
+            _g = int(30 + (25 - 30) * _t)
+            _b = int(46 + (35 - 46) * _t)
+            _border = f"rgba(239,68,68,{0.15 + _t * 0.35:.2f})"
+        return f"rgb({_r},{_g},{_b})", _border
 
-    if _selected_tk:
-        _row    = df[df["Ticker"] == _selected_tk].iloc[0]
-        _pl_pct = _row["P/L %"]
-        _pl_col = "#22c55e" if _pl_pct >= 0 else "#ef4444"
-        _pl_sym = "+" if _pl_pct >= 0 else ""
-        _name   = _row.get("Name") or _selected_tk
-        _sector = _row.get("Sector") or "—"
+    def _svg_spark(ticker, w=80, h=28):
+        if ticker not in price_data.columns:
+            return ""
+        _p = price_data[ticker].dropna().tail(30)
+        if len(_p) < 2:
+            return ""
+        _y = _p.values
+        _mn, _mx = _y.min(), _y.max()
+        _rng = _mx - _mn if _mx != _mn else 1
+        _pts = []
+        for _j, _v in enumerate(_y):
+            _px = _j / (len(_y) - 1) * w
+            _py = h - ((_v - _mn) / _rng) * (h - 4) - 2
+            _pts.append(f"{_px:.1f},{_py:.1f}")
+        _c = "#22c55e" if _y[-1] >= _y[0] else "#ef4444"
+        return (
+            f'<svg width="{w}" height="{h}" style="display:block;margin:6px auto 0;">'
+            f'<polyline points="{" ".join(_pts)}" fill="none" '
+            f'stroke="{_c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+            f'</svg>'
+        )
 
-        # Banner
-        st.markdown(
-            f'<div style="margin:12px 0;padding:14px 18px;border-radius:var(--radius-sm);'
-            f'background:linear-gradient(135deg,var(--bg-elevated) 0%,var(--bg-surface) 100%);'
-            f'border:1px solid var(--border);border-left:3px solid var(--tab-overview);">'
-            f'<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:2px;">'
-            f'{_selected_tk} — {_name}</div>'
-            f'<div style="font-size:11px;color:var(--text-muted);">{_sector}</div></div>',
-            unsafe_allow_html=True)
+    # Build grid cards
+    _cards = ""
+    for _, _r in _hm_df.iterrows():
+        _tk  = _r["Ticker"]
+        _nm  = _r.get("Name") or _tk
+        _pl  = _r["P/L %"]
+        _plc = "#22c55e" if _pl >= 0 else "#ef4444"
+        _pls = "+" if _pl >= 0 else ""
+        _bg, _bdr = _pl_bg(_pl)
+        _wt  = _r["Current Weight"]
+        _spark = _svg_spark(_tk)
 
-        # Metric cards
-        _ec1, _ec2, _ec3, _ec4 = st.columns(4)
-        for _col, _label, _val in [
-            (_ec1, "Current Price", f"{_currency}{_row['Current Price']:,.2f}"),
-            (_ec2, "Unrealised P/L", f"{_pl_sym}{_currency}{_row['Unrealised P/L']:,.2f}"),
-            (_ec3, "Market Value",   f"{_currency}{_row['Market Value']:,.0f}"),
-            (_ec4, "P/L %",          f"{_pl_sym}{_pl_pct:.2%}"),
-        ]:
-            _vc = _pl_col if _label in ("Unrealised P/L", "P/L %") else "var(--text-primary)"
-            with _col:
-                st.markdown(
-                    f'<div style="padding:10px 14px;background:var(--bg-surface);'
-                    f'border-radius:var(--radius-sm);border:1px solid var(--border);">'
-                    f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;'
-                    f'letter-spacing:0.1em;color:var(--text-muted);margin-bottom:4px;">{_label}</div>'
-                    f'<div style="font-size:20px;font-weight:700;color:{_vc};">{_val}</div></div>',
-                    unsafe_allow_html=True)
+        _cards += f'''
+        <div style="background:{_bg};border:1px solid {_bdr};border-radius:var(--radius-sm);
+            padding:14px;display:flex;flex-direction:column;justify-content:space-between;
+            min-height:140px;transition:transform 0.15s,box-shadow 0.15s;cursor:default;"
+            onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 24px rgba(0,0,0,0.4)';"
+            onmouseout="this.style.transform='none';this.style.boxShadow='none';">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:-0.01em;">{_tk}</div>
+              <div style="font-size:13px;font-weight:700;color:{_plc};">{_pls}{_pl:.2%}</div>
+            </div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+                title="{_nm}">{_nm}</div>
+          </div>
+          {_spark}
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+            <div>
+              <div style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;
+                  letter-spacing:0.06em;">Price</div>
+              <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.85);">
+                {_currency}{_r["Current Price"]:,.2f}</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;
+                  letter-spacing:0.06em;">Value</div>
+              <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.85);">
+                {_currency}{_r["Market Value"]:,.0f}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;
+                  letter-spacing:0.06em;">Weight</div>
+              <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.85);">
+                {_wt:.1%}</div>
+            </div>
+          </div>
+        </div>'''
 
-        # Price chart + Key stats
-        _chart_col, _stats_col = st.columns([2, 1])
-
-        with _chart_col:
-            if _selected_tk in price_data.columns:
-                _ap = price_data[_selected_tk].dropna().tail(90)
-                if len(_ap) > 1:
-                    _up = _ap.iloc[-1] >= _ap.iloc[0]
-                    _line_col = "#22c55e" if _up else "#ef4444"
-                    _fill_col = "rgba(34,197,94,0.08)" if _up else "rgba(239,68,68,0.08)"
-                    _pfig = go.Figure()
-                    _pfig.add_trace(go.Scatter(
-                        x=_ap.index, y=_ap.values, mode="lines",
-                        line=dict(color=_line_col, width=2),
-                        fill="tozeroy", fillcolor=_fill_col,
-                        hovertemplate="%{x|%b %d}<br>" + _currency + "%{y:,.2f}<extra></extra>",
-                    ))
-                    _pfig.update_layout(
-                        height=200, margin=dict(l=0, r=0, t=24, b=0),
-                        title=dict(text="90-Day Price", font=dict(size=11, color="#8b7fc0"),
-                                   x=0, xanchor="left"),
-                        yaxis=dict(gridcolor="rgba(255,255,255,0.04)",
-                                   zerolinecolor="rgba(255,255,255,0.06)"),
-                        xaxis=dict(gridcolor="rgba(255,255,255,0.04)"),
-                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                        showlegend=False,
-                    )
-                    st.plotly_chart(_pfig, use_container_width=True)
-                else:
-                    st.caption("Insufficient price data for chart.")
-            else:
-                st.caption("Price data unavailable.")
-
-        with _stats_col:
-            _asset_ret = returns[_selected_tk] if _selected_tk in returns.columns else None
-            _ann_ret = _ann_vol = _sharpe = _beta = "—"
-            _ret_col = "var(--text-primary)"
-            if _asset_ret is not None and len(_asset_ret.dropna()) > 5:
-                _ar_clean = _asset_ret.dropna()
-                _ann_ret_v = _ar_clean.mean() * TRADING_DAYS
-                _ann_vol_v = _ar_clean.std() * np.sqrt(TRADING_DAYS)
-                _sharpe_v  = ((_ann_ret_v - _rf_rate) / _ann_vol_v) if _ann_vol_v > 0 else 0
-                _beta_v    = compute_asset_beta(_asset_ret, portfolio_returns)
-                _ann_ret = f"{_ann_ret_v:+.2%}"
-                _ann_vol = f"{_ann_vol_v:.2%}"
-                _sharpe  = f"{_sharpe_v:.2f}"
-                _beta    = f"{_beta_v:.2f}"
-                _ret_col = "#22c55e" if _ann_ret_v >= 0 else "#ef4444"
-
-            _stat_rows = [
-                ("Ann. Return", _ann_ret, _ret_col),
-                ("Volatility",  _ann_vol, "var(--text-primary)"),
-                ("Sharpe Ratio",_sharpe,  "var(--text-primary)"),
-                ("Beta",        _beta,    "var(--text-primary)"),
-                ("Avg Cost",    f"{_currency}{_row['Avg Cost']:,.2f}", "var(--text-primary)"),
-                ("Quantity",    f"{_row['Quantity']:,.0f}", "var(--text-primary)"),
-            ]
-            _stat_html = ""
-            for _sl, _sv, _sc in _stat_rows:
-                _stat_html += (
-                    f'<div style="display:flex;justify-content:space-between;padding:7px 0;'
-                    f'border-bottom:1px solid rgba(255,255,255,0.04);">'
-                    f'<span style="font-size:11px;color:var(--text-muted);">{_sl}</span>'
-                    f'<span style="font-size:12px;font-weight:600;color:{_sc};">{_sv}</span></div>'
-                )
-            st.markdown(
-                f'<div style="padding:12px 14px;background:var(--bg-surface);'
-                f'border-radius:var(--radius-sm);border:1px solid var(--border);margin-top:4px;">'
-                f'<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;'
-                f'color:var(--tab-overview);margin-bottom:8px;">Key Stats</div>'
-                f'{_stat_html}</div>', unsafe_allow_html=True)
-
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));'
+        f'gap:10px;">{_cards}</div>',
+        unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Secondary grid: Sector Allocation | Asset Allocation ─
