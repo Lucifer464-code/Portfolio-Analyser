@@ -115,9 +115,10 @@ def _build_ratios(fin_a, fin_q, bs, info=None):
 
     ebitda = (ebit + da) if (ebit and da) else _ttm(fin_a, fin_q, "ebitda") if fin_q is not None else _get_col(fin_a, "ebitda", 0)
 
-    price  = info.get("currentPrice") or info.get("regularMarketPrice") if info else None
-    mktcap = info.get("marketCap")    if info else None
-    shares = info.get("sharesOutstanding") if info else None
+    info   = info or {}
+    price  = info.get("currentPrice") or info.get("regularMarketPrice")
+    mktcap = info.get("marketCap")
+    shares = info.get("sharesOutstanding")
 
     pe     = _ratio(price,  ni / shares if (ni and shares and shares > 0) else None)
     pb     = _ratio(mktcap, eq)   if eq    else None
@@ -126,15 +127,42 @@ def _build_ratios(fin_a, fin_q, bs, info=None):
     ev_ebi = _ratio(ev, ebitda)   if ebitda else None
     ev_rev = _ratio(ev, rev)      if rev    else None
 
+    gross_margin  = _ratio(gp, rev)
+    op_margin     = _ratio(op, rev)
+    net_margin    = _ratio(ni, rev)
+    roe           = _ratio(ni, eq)
+    roa           = _ratio(ni, ta)
+    current_ratio = _ratio(ca, cl)
+    quick_ratio   = _ratio((ca - inv) if (ca and inv) else ca, cl)
+    de_ratio      = _ratio(debt, eq)
+
+    # For TTM (fin_q provided), prefer yfinance's canonical .info ratios
+    # when statement-derived values are unavailable (e.g. ETFs have no financials).
+    if fin_q is not None:
+        _dte = info.get("debtToEquity")
+        pe            = pe            if pe            is not None else info.get("trailingPE")
+        pb            = pb            if pb            is not None else info.get("priceToBook")
+        ps            = ps            if ps            is not None else info.get("priceToSalesTrailing12Months")
+        ev_ebi        = ev_ebi        if ev_ebi        is not None else info.get("enterpriseToEbitda")
+        ev_rev        = ev_rev        if ev_rev        is not None else info.get("enterpriseToRevenue")
+        roe           = roe           if roe           is not None else info.get("returnOnEquity")
+        roa           = roa           if roa           is not None else info.get("returnOnAssets")
+        gross_margin  = gross_margin  if gross_margin  is not None else info.get("grossMargins")
+        op_margin     = op_margin     if op_margin     is not None else info.get("operatingMargins")
+        net_margin    = net_margin    if net_margin    is not None else info.get("profitMargins")
+        current_ratio = current_ratio if current_ratio is not None else info.get("currentRatio")
+        quick_ratio   = quick_ratio   if quick_ratio   is not None else info.get("quickRatio")
+        de_ratio      = de_ratio      if de_ratio      is not None else (_dte / 100 if _dte is not None else None)
+
     return dict(
-        gross_margin  = _ratio(gp, rev),
-        op_margin     = _ratio(op, rev),
-        net_margin    = _ratio(ni, rev),
-        roe           = _ratio(ni, eq),
-        roa           = _ratio(ni, ta),
-        current_ratio = _ratio(ca, cl),
-        quick_ratio   = _ratio((ca - inv) if (ca and inv) else ca, cl),
-        de_ratio      = _ratio(debt, eq),
+        gross_margin  = gross_margin,
+        op_margin     = op_margin,
+        net_margin    = net_margin,
+        roe           = roe,
+        roa           = roa,
+        current_ratio = current_ratio,
+        quick_ratio   = quick_ratio,
+        de_ratio      = de_ratio,
         int_coverage  = _ratio(ebit, abs(int_)) if int_ else None,
         pe=pe, pb=pb, ps=ps, ev_ebitda=ev_ebi, ev_rev=ev_rev,
     )
