@@ -96,6 +96,44 @@ def _fmt(val, pct=False, mult=False):
     return f"{val:.2f}"
 
 
+def _safe_info(ticker):
+    """Best-effort fetch of ticker.info with fallbacks.
+
+    .info is known to fail (empty dict, HTTP 401/429) on cloud environments
+    where Yahoo's scraping endpoint is blocked or rate-limited. We augment
+    with .fast_info (a different, more reliable endpoint) so downstream ratio
+    math still has price / market cap / shares outstanding to work with.
+    """
+    t = yf.Ticker(ticker)
+    info = {}
+    try:
+        info = dict(t.info or {})
+    except Exception:
+        info = {}
+
+    # If info is empty or very sparse, populate core price fields from fast_info
+    if len(info) < 10:
+        try:
+            fi = t.fast_info
+            mapping = [
+                ("last_price",        "currentPrice"),
+                ("last_price",        "regularMarketPrice"),
+                ("market_cap",        "marketCap"),
+                ("shares",            "sharesOutstanding"),
+                ("currency",          "currency"),
+            ]
+            for src, dst in mapping:
+                try:
+                    v = getattr(fi, src, None)
+                    if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                        info.setdefault(dst, v)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return info
+
+
 def _build_ratios(fin_a, fin_q, bs, info=None):
     rev   = _ttm(fin_a, fin_q, "totalrevenue")      if fin_q is not None else _get_col(fin_a, "totalrevenue", 0)
     gp    = _ttm(fin_a, fin_q, "grossprofit")        if fin_q is not None else _get_col(fin_a, "grossprofit", 0)
@@ -136,23 +174,23 @@ def _build_ratios(fin_a, fin_q, bs, info=None):
     quick_ratio   = _ratio((ca - inv) if (ca and inv) else ca, cl)
     de_ratio      = _ratio(debt, eq)
 
-    # For TTM (fin_q provided), prefer yfinance's canonical .info ratios
-    # when statement-derived values are unavailable (e.g. ETFs have no financials).
-    if fin_q is not None:
-        _dte = info.get("debtToEquity")
-        pe            = pe            if pe            is not None else info.get("trailingPE")
-        pb            = pb            if pb            is not None else info.get("priceToBook")
-        ps            = ps            if ps            is not None else info.get("priceToSalesTrailing12Months")
-        ev_ebi        = ev_ebi        if ev_ebi        is not None else info.get("enterpriseToEbitda")
-        ev_rev        = ev_rev        if ev_rev        is not None else info.get("enterpriseToRevenue")
-        roe           = roe           if roe           is not None else info.get("returnOnEquity")
-        roa           = roa           if roa           is not None else info.get("returnOnAssets")
-        gross_margin  = gross_margin  if gross_margin  is not None else info.get("grossMargins")
-        op_margin     = op_margin     if op_margin     is not None else info.get("operatingMargins")
-        net_margin    = net_margin    if net_margin    is not None else info.get("profitMargins")
-        current_ratio = current_ratio if current_ratio is not None else info.get("currentRatio")
-        quick_ratio   = quick_ratio   if quick_ratio   is not None else info.get("quickRatio")
-        de_ratio      = de_ratio      if de_ratio      is not None else (_dte / 100 if _dte is not None else None)
+    # When statement-derived ratios are None (e.g. ETFs, or statements missing,
+    # or .info empty so price/mktcap/shares couldn't compute them), fall back
+    # to yfinance's canonical ratios exposed directly in .info.
+    _dte = info.get("debtToEquity")
+    pe            = pe            if pe            is not None else info.get("trailingPE")
+    pb            = pb            if pb            is not None else info.get("priceToBook")
+    ps            = ps            if ps            is not None else info.get("priceToSalesTrailing12Months")
+    ev_ebi        = ev_ebi        if ev_ebi        is not None else info.get("enterpriseToEbitda")
+    ev_rev        = ev_rev        if ev_rev        is not None else info.get("enterpriseToRevenue")
+    roe           = roe           if roe           is not None else info.get("returnOnEquity")
+    roa           = roa           if roa           is not None else info.get("returnOnAssets")
+    gross_margin  = gross_margin  if gross_margin  is not None else info.get("grossMargins")
+    op_margin     = op_margin     if op_margin     is not None else info.get("operatingMargins")
+    net_margin    = net_margin    if net_margin    is not None else info.get("profitMargins")
+    current_ratio = current_ratio if current_ratio is not None else info.get("currentRatio")
+    quick_ratio   = quick_ratio   if quick_ratio   is not None else info.get("quickRatio")
+    de_ratio      = de_ratio      if de_ratio      is not None else (_dte / 100 if _dte is not None else None)
 
     return dict(
         gross_margin  = gross_margin,
@@ -177,10 +215,7 @@ def get_asset_fundamental_table(ticker: str) -> pd.DataFrame:
     if stmts is None:
         return pd.DataFrame({"Metric": ["No data available"], "Value": ["N/A"]})
 
-    try:
-        info = yf.Ticker(ticker).info
-    except Exception:
-        info = {}
+    info = _safe_info(ticker)
 
     fin_a, fin_q = stmts["fin_a"], stmts["fin_q"]
     bs_a,  bs_q  = stmts["bs_a"],  stmts["bs_q"]
