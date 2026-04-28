@@ -2493,6 +2493,51 @@ elif _module == "performance":
         empty_state("📉", "Drawdown data unavailable")
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Rolling Returns chart ───────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("ROLLING RETURNS", colour="#22c55e")
+    _rr_window_map = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252}
+    _rr_choice = st.radio(
+        "Rolling window", list(_rr_window_map.keys()),
+        horizontal=True, index=2, key="perf_rolling_window", label_visibility="collapsed",
+    )
+    _rr_win = _rr_window_map[_rr_choice]
+    _pr_full = portfolio_returns.dropna()
+    if len(_pr_full) >= _rr_win:
+        _rr_port = (1 + _pr_full).rolling(_rr_win).apply(lambda x: x.prod() - 1, raw=True)
+        _rr_port_ann = (1 + _rr_port) ** (252 / _rr_win) - 1
+        _rr_df = pd.DataFrame({"Portfolio": _rr_port_ann}).dropna()
+        if benchmark_returns is not None:
+            _br_full = benchmark_returns.dropna()
+            if len(_br_full) >= _rr_win:
+                _rr_bench = (1 + _br_full).rolling(_rr_win).apply(lambda x: x.prod() - 1, raw=True)
+                _rr_bench_ann = (1 + _rr_bench) ** (252 / _rr_win) - 1
+                _rr_df["Benchmark"] = _rr_bench_ann.reindex(_rr_df.index, method="ffill")
+        if not _rr_df.empty:
+            _rr_fig = px.line(
+                _rr_df,
+                color_discrete_map={"Portfolio": "#22c55e", "Benchmark": "#64748b"},
+            )
+            _rr_fig.update_traces(line=dict(width=2), hovertemplate="%{y:.2%}")
+            _rr_fig.add_hline(y=0, line=dict(color="#94a3b8", width=1, dash="dot"))
+            _rr_fig.update_layout(
+                height=320, margin=dict(l=0, r=0, t=0, b=0),
+                yaxis=dict(tickformat=".0%", title=f"Annualized {_rr_choice} Rolling Return"),
+                xaxis=dict(title="Date"), hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(_rr_fig, use_container_width=True)
+        else:
+            empty_state("📈", "Rolling returns unavailable for this window")
+    else:
+        empty_state("📈", "Not enough history",
+                    f"Need at least {_rr_win} days of returns for the {_rr_choice} window")
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ── Row 2: Full metrics cards ──────────────────────────
     st.markdown(
         '<div style="background:var(--bg-card);border:1px solid var(--border);'
