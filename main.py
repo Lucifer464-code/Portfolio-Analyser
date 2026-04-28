@@ -2460,6 +2460,39 @@ elif _module == "performance":
     st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Portfolio Drawdown chart ────────────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #22c55e;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("PORTFOLIO DRAWDOWN", colour="#22c55e")
+    _dd_series = slice_tf(drawdown_series, pm_tf) if pm_tf != "All" else drawdown_series
+    if _dd_series is None or _dd_series.empty:
+        _dd_series = drawdown_series
+    if _dd_series is not None and not _dd_series.empty:
+        _dd_df = pd.DataFrame({"Drawdown": _dd_series})
+        _dd_fig = px.area(_dd_df, color_discrete_sequence=["#ef4444"])
+        _dd_fig.update_traces(line=dict(width=1.5), hovertemplate="%{y:.2%}")
+        _min_idx = _dd_series.idxmin()
+        _min_val = float(_dd_series.min())
+        _dd_fig.add_scatter(
+            x=[_min_idx], y=[_min_val], mode="markers+text",
+            marker=dict(color="#ef4444", size=10, line=dict(color="#ffffff", width=1)),
+            text=[f"Max DD: {_min_val:.2%}"], textposition="bottom center",
+            textfont=dict(color="#ef4444", size=11),
+            name="Max Drawdown", showlegend=False, hovertemplate="%{x|%b %d, %Y}<br>%{y:.2%}",
+        )
+        _dd_fig.update_layout(
+            height=320, margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
+            yaxis=dict(tickformat=".0%", title="Drawdown"),
+            xaxis=dict(title="Date"), hovermode="x unified",
+        )
+        st.plotly_chart(_dd_fig, use_container_width=True)
+    else:
+        empty_state("📉", "Drawdown data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ── Row 2: Full metrics cards ──────────────────────────
     st.markdown(
         '<div style="background:var(--bg-card);border:1px solid var(--border);'
