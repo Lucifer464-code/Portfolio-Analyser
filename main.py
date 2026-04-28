@@ -1129,6 +1129,53 @@ def cached_sector_recommendations(market="US"): return generate_sector_wise_reco
 @st.cache_data(show_spinner=False)
 def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
 
+@st.cache_data(show_spinner=False)
+def cached_rolling_annualized_returns(portfolio_returns, benchmark_returns, window: int) -> pd.DataFrame:
+    pr = portfolio_returns.dropna()
+    if len(pr) < window:
+        return pd.DataFrame()
+    rr_port = (1 + pr).rolling(window).apply(lambda x: x.prod() - 1, raw=True)
+    out = pd.DataFrame({"Portfolio": (1 + rr_port) ** (252 / window) - 1}).dropna()
+    if benchmark_returns is not None:
+        br = benchmark_returns.dropna()
+        if len(br) >= window:
+            rr_bench = (1 + br).rolling(window).apply(lambda x: x.prod() - 1, raw=True)
+            bench_ann = (1 + rr_bench) ** (252 / window) - 1
+            out["Benchmark"] = bench_ann.reindex(out.index, method="ffill")
+    return out
+
+# ── Performance-tab computation caches ─────────────────────
+@st.cache_data(show_spinner=False)
+def cached_performance_metrics(portfolio_returns, benchmark_returns, rf_rate):
+    return get_performance_metrics(portfolio_returns, benchmark_returns, rf_rate=rf_rate)
+
+@st.cache_data(show_spinner=False)
+def cached_capture_ratios(portfolio_returns, benchmark_returns):
+    return compute_capture_ratios(portfolio_returns, benchmark_returns)
+
+@st.cache_data(show_spinner=False)
+def cached_period_returns(portfolio_returns, benchmark_returns):
+    return get_period_returns(portfolio_returns, benchmark_returns)
+
+@st.cache_data(show_spinner=False)
+def cached_sector_contribution(weights_series, returns_df, sector_map):
+    return compute_sector_contribution(weights_series, returns_df, sector_map)
+
+@st.cache_data(show_spinner=False)
+def cached_brinson_attribution(weights_series, returns_df, benchmark_returns, sector_map, benchmark):
+    return compute_brinson_attribution(weights_series, returns_df, benchmark_returns, sector_map, benchmark)
+
+@st.cache_data(show_spinner=False)
+def cached_rolling_metrics(portfolio_returns, benchmark_returns, window: int):
+    return get_rolling_metrics(portfolio_returns, benchmark_returns, window=window)
+
+@st.cache_data(show_spinner=False)
+def cached_cumulative_curve(returns_series):
+    s = returns_series.dropna()
+    if s.empty:
+        return s
+    return (1 + s).cumprod()
+
 # ── External API caches ─────────────────────────────────────
 @st.cache_data(ttl=3600,  show_spinner=False)
 def cached_fred_macro(key):                  return fred_macro_snapshot(key)
@@ -2413,7 +2460,7 @@ elif _module == "performance":
                      horizontal=True, index=3, key="pm_timeframe", label_visibility="collapsed")
     _pr_sliced = slice_tf(portfolio_returns, pm_tf) if pm_tf != "All" else portfolio_returns
     _br_sliced = slice_tf(benchmark_returns, pm_tf) if (benchmark_returns is not None and pm_tf != "All") else benchmark_returns
-    pm = get_performance_metrics(_pr_sliced, _br_sliced, rf_rate=_rf_rate)
+    pm = cached_performance_metrics(_pr_sliced, _br_sliced, _rf_rate)
 
     # ── Stat row ────────────────────────────────────────────
     _ps1, _ps2, _ps3, _ps4 = st.columns(4)
@@ -2430,14 +2477,14 @@ elif _module == "performance":
     )
     card_header("CUMULATIVE RETURNS", colour="#22c55e")
     tf = pm_tf if pm_tf != "All" else "5Y"
-    cum_full = (1 + portfolio_returns.dropna()).cumprod()
+    cum_full = cached_cumulative_curve(portfolio_returns)
     cum      = slice_tf(cum_full, tf)
     if cum.empty:
         cum = cum_full
     cum      = cum / cum.iloc[0] - 1
     perf_df = pd.DataFrame({"Portfolio": cum})
     if benchmark_returns is not None:
-        bc_full = (1 + benchmark_returns.dropna()).cumprod()
+        bc_full = cached_cumulative_curve(benchmark_returns)
         bc      = slice_tf(bc_full, tf).reindex(cum.index, method="ffill")
         if not bc.empty:
             bc = bc / bc.iloc[0] - 1
@@ -2506,33 +2553,21 @@ elif _module == "performance":
         horizontal=True, index=2, key="perf_rolling_window", label_visibility="collapsed",
     )
     _rr_win = _rr_window_map[_rr_choice]
-    _pr_full = portfolio_returns.dropna()
-    if len(_pr_full) >= _rr_win:
-        _rr_port = (1 + _pr_full).rolling(_rr_win).apply(lambda x: x.prod() - 1, raw=True)
-        _rr_port_ann = (1 + _rr_port) ** (252 / _rr_win) - 1
-        _rr_df = pd.DataFrame({"Portfolio": _rr_port_ann}).dropna()
-        if benchmark_returns is not None:
-            _br_full = benchmark_returns.dropna()
-            if len(_br_full) >= _rr_win:
-                _rr_bench = (1 + _br_full).rolling(_rr_win).apply(lambda x: x.prod() - 1, raw=True)
-                _rr_bench_ann = (1 + _rr_bench) ** (252 / _rr_win) - 1
-                _rr_df["Benchmark"] = _rr_bench_ann.reindex(_rr_df.index, method="ffill")
-        if not _rr_df.empty:
-            _rr_fig = px.line(
-                _rr_df,
-                color_discrete_map={"Portfolio": "#22c55e", "Benchmark": "#64748b"},
-            )
-            _rr_fig.update_traces(line=dict(width=2), hovertemplate="%{y:.2%}")
-            _rr_fig.add_hline(y=0, line=dict(color="#94a3b8", width=1, dash="dot"))
-            _rr_fig.update_layout(
-                height=320, margin=dict(l=0, r=0, t=0, b=0),
-                yaxis=dict(tickformat=".0%", title=f"Annualized {_rr_choice} Rolling Return"),
-                xaxis=dict(title="Date"), hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            )
-            st.plotly_chart(_rr_fig, use_container_width=True)
-        else:
-            empty_state("📈", "Rolling returns unavailable for this window")
+    _rr_df = cached_rolling_annualized_returns(portfolio_returns, benchmark_returns, _rr_win)
+    if not _rr_df.empty:
+        _rr_fig = px.line(
+            _rr_df,
+            color_discrete_map={"Portfolio": "#22c55e", "Benchmark": "#64748b"},
+        )
+        _rr_fig.update_traces(line=dict(width=2), hovertemplate="%{y:.2%}")
+        _rr_fig.add_hline(y=0, line=dict(color="#94a3b8", width=1, dash="dot"))
+        _rr_fig.update_layout(
+            height=320, margin=dict(l=0, r=0, t=0, b=0),
+            yaxis=dict(tickformat=".0%", title=f"Annualized {_rr_choice} Rolling Return"),
+            xaxis=dict(title="Date"), hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(_rr_fig, use_container_width=True)
     else:
         empty_state("📈", "Not enough history",
                     f"Need at least {_rr_win} days of returns for the {_rr_choice} window")
@@ -2578,7 +2613,7 @@ elif _module == "performance":
         )
         card_header("CAPTURE RATIOS", colour="#22c55e")
         if benchmark_returns is not None:
-            _captures = compute_capture_ratios(_pr_sliced, _br_sliced)
+            _captures = cached_capture_ratios(_pr_sliced, _br_sliced)
             _uc = _captures.get("upside_capture")
             _dc = _captures.get("downside_capture")
             _cap_c1, _cap_c2 = st.columns(2)
@@ -2603,7 +2638,7 @@ elif _module == "performance":
             unsafe_allow_html=True,
         )
         card_header("PERIOD RETURNS", colour="#22c55e")
-        pr      = get_period_returns(portfolio_returns, benchmark_returns)
+        pr      = cached_period_returns(portfolio_returns, benchmark_returns)
         pr.index += 1
         pl_cols = ["Portfolio Return","Benchmark Return","Excess Return"] if "Benchmark Return" in pr.columns else ["Portfolio Return"]
         st.dataframe(style_pl(pr, pl_cols).format({c:"{:.2%}" for c in pl_cols}), use_container_width=True)
@@ -2622,7 +2657,7 @@ elif _module == "performance":
             unsafe_allow_html=True,
         )
         card_header("SECTOR CONTRIBUTION", colour="#22c55e")
-        _sc_df = compute_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
+        _sc_df = cached_sector_contribution(weights_series, _perf_returns_sliced, _sector_map_dict)
         if not _sc_df.empty:
             _sc_fig = px.bar(
                 _sc_df, x="Contribution", y="Sector", orientation="h",
@@ -2645,7 +2680,7 @@ elif _module == "performance":
         )
         card_header("BRINSON ATTRIBUTION", colour="#22c55e")
         if benchmark in ("^GSPC", "^NSEI", "^CRSLDX") and benchmark_returns is not None:
-            _br_result = compute_brinson_attribution(
+            _br_result = cached_brinson_attribution(
                 weights_series, _perf_returns_sliced, _br_sliced, _sector_map_dict, benchmark
             )
             if isinstance(_br_result, tuple):
@@ -2680,7 +2715,7 @@ elif _module == "performance":
             unsafe_allow_html=True,
         )
         card_header("ROLLING 60-DAY SHARPE RATIO", colour="#22c55e")
-        rm  = get_rolling_metrics(portfolio_returns, benchmark_returns, window=60)
+        rm  = cached_rolling_metrics(portfolio_returns, benchmark_returns, 60)
         fig = px.line(rm[["Sharpe Ratio"]], color_discrete_map={"Sharpe Ratio":"#22c55e"})
         if "Benchmark Sharpe" in rm.columns:
             fig.add_scatter(x=rm.index, y=rm["Benchmark Sharpe"], name="Benchmark Sharpe",
@@ -2701,7 +2736,7 @@ elif _module == "performance":
             for _t in tickers:
                 if _t in returns.columns:
                     _tret = returns[_t].dropna()
-                    _tpm  = get_performance_metrics(_tret, _br_sliced, rf_rate=_rf_rate)
+                    _tpm  = cached_performance_metrics(_tret, _br_sliced, _rf_rate)
                     _indiv_perf[_t] = {
                         "Ann. Return":   f"{_tpm['annualized_return']:.2%}",
                         "Sharpe":        f"{_tpm['sharpe_ratio']:.2f}",
