@@ -340,6 +340,7 @@ def compute_xirr(transactions: pd.DataFrame, current_value: float,
     if not has_neg or not has_pos:
         return np.nan
 
+    cash_flows.sort(key=lambda cf: cf[0])
     dates   = [cf[0] for cf in cash_flows]
     amounts = [cf[1] for cf in cash_flows]
     t0      = dates[0]
