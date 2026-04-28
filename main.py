@@ -2548,9 +2548,22 @@ elif _module == "performance":
     )
     card_header("ROLLING RETURNS", colour="#22c55e")
     _rr_window_map = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252}
+    _rr_help = (
+        "Annualized rolling return at each date.\n\n"
+        "Method: compound the trailing N daily returns into a period total "
+        "return, then annualize via (1 + R)^(252/N) − 1.\n\n"
+        "• 1M (21d) → annualized equivalent of the trailing 1-month return "
+        "(exponent ≈ 12, so values swing widely)\n"
+        "• 3M (63d) → annualized 3-month return (exponent = 4)\n"
+        "• 6M (126d) → annualized 6-month return (exponent = 2)\n"
+        "• 1Y (252d) → equals the actual trailing 1-year total return "
+        "(exponent = 1)\n\n"
+        "Shorter windows are noisier; longer windows are smoother."
+    )
     _rr_choice = st.radio(
         "Rolling window", list(_rr_window_map.keys()),
-        horizontal=True, index=2, key="perf_rolling_window", label_visibility="collapsed",
+        horizontal=True, index=2, key="perf_rolling_window",
+        label_visibility="collapsed", help=_rr_help,
     )
     _rr_win = _rr_window_map[_rr_choice]
     _rr_df = cached_rolling_annualized_returns(portfolio_returns, benchmark_returns, _rr_win)
@@ -2568,6 +2581,17 @@ elif _module == "performance":
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
         st.plotly_chart(_rr_fig, use_container_width=True)
+        _rr_caption_map = {
+            "1M": "Each point = trailing 21-day return scaled to a yearly rate "
+                  "(×~12). Expect large swings — short windows amplify noise.",
+            "3M": "Each point = trailing 63-day return scaled to a yearly rate "
+                  "(×4). Smoother than 1M but still volatile.",
+            "6M": "Each point = trailing 126-day return scaled to a yearly rate "
+                  "(×2). Balanced view of medium-term performance trend.",
+            "1Y": "Each point = actual trailing 1-year total return — no scaling "
+                  "applied (exponent = 1). Smoothest series.",
+        }
+        st.caption(_rr_caption_map[_rr_choice])
     else:
         empty_state("📈", "Not enough history",
                     f"Need at least {_rr_win} days of returns for the {_rr_choice} window")
