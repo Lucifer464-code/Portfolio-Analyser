@@ -42,6 +42,8 @@ from asset_analytics_engine import (
 )
 from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics, compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution
 from rebalance_engine import simulate_cash_injection, simulate_trade
+from portfolio_ui import render_portfolio_panel
+import payload as _payload
 from external_apis import (
     finnhub_earnings_surprises, finnhub_recommendations,
     finnhub_insider_sentiment, finnhub_portfolio_consensus,
@@ -1265,6 +1267,9 @@ with st.sidebar:
     st.markdown('<span class="sidebar-group-label">Portfolio</span>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Upload Portfolio CSV", type="csv", label_visibility="collapsed")
 
+    st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
+    render_portfolio_panel()
+
 px.defaults.template = "portfolio_dark"
 
 # ── API keys from .streamlit/secrets.toml ──────────────────
@@ -1275,6 +1280,22 @@ except Exception:
     _FINNHUB_KEY = "d6ljirpr01qrq6i31170d6ljirpr01qrq6i3117g"
     _FRED_KEY    = "1887e2a54d8ecf8a37c4df1799d4b3bb"
 
+# ── Resolve effective portfolio source: a fresh upload always wins over
+#    a staged saved-portfolio load. A staged load is turned into an
+#    in-memory CSV so it flows through the exact same pipeline as an upload.
+_pending = st.session_state.get("_pending_saved_load")
+_saved_source = None
+_saved_source_id = None
+if uploaded_file is None and _pending is not None:
+    _saved_source = _payload.payload_to_csv_buffer(_pending["payload"])
+    _saved_source_id = f"saved:{_pending['name']}"
+    # Apply saved settings before the pipeline reads them below.
+    _s = _payload.payload_settings(_pending["payload"])
+    st.session_state["benchmark"] = _s["benchmark"]
+    st.session_state["max_weight_pct"] = _s["max_weight_pct"]
+
+_effective_source = uploaded_file if uploaded_file is not None else _saved_source
+
 benchmark      = st.session_state.get("benchmark", "^GSPC")
 _bm_display    = {"^GSPC": "S&P 500", "^NSEI": "NIFTY 50", "^CRSLDX": "NIFTY 500",
                    "^BSESN": "SENSEX", "^DJI": "Dow Jones", "^IXIC": "NASDAQ"}
@@ -1284,9 +1305,10 @@ max_weight_pct = st.session_state.get("max_weight_pct", 15.0)
 max_weight     = max_weight_pct / 100
 lookback       = "max"
 
-if uploaded_file is None:
+if _effective_source is None:
     st.session_state.pop("data_loaded",    None)
     st.session_state.pop("selected_asset", None)
+    st.session_state.pop("_pending_saved_load", None)
     st.markdown("""
     <div style="max-width:660px;margin:48px auto 0;text-align:center;">
 
@@ -1352,7 +1374,7 @@ if uploaded_file is None:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-_file_id = getattr(uploaded_file, "file_id", uploaded_file.name)
+_file_id = _saved_source_id if _saved_source_id is not None else getattr(uploaded_file, "file_id", uploaded_file.name)
 if st.session_state.get("_last_file_id") != _file_id:
     for _k in ("data_loaded","selected_asset","risk_summary","drawdown_series",
                "frontier","optimal_weights","_opt_key","_portfolio_cache","_benchmark_cache"):
@@ -1374,7 +1396,7 @@ if st.session_state.get("_last_benchmark") != benchmark:
 
 if "_portfolio_cache" not in st.session_state:
 
-    result       = load_and_validate_csv(uploaded_file)
+    result       = load_and_validate_csv(_effective_source)
     transactions = result[0] if isinstance(result, tuple) else result
     if transactions is None or transactions.empty:
         st.error("Uploaded file contains no valid data."); st.stop()
@@ -1476,6 +1498,7 @@ if "_portfolio_cache" not in st.session_state:
         "latest_vol":      latest_vol,
     }
     st.session_state["data_loaded"] = True
+    st.session_state.pop("_pending_saved_load", None)
 
 # ── Read everything from cache ──────────────────────────────
 # Safe defaults in case cache is partially populated
