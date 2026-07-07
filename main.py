@@ -1297,6 +1297,15 @@ if uploaded_file is None and _pending is not None:
 
 _effective_source = uploaded_file if uploaded_file is not None else _saved_source
 
+# A portfolio loaded from a saved entry has no persistent source (the upload
+# widget is empty and the pending flag is cleared after the first load), so on
+# later reruns — e.g. switching tabs — treat an already-built cache as an
+# active portfolio instead of falling back to the home screen.
+_has_loaded_portfolio = (
+    _effective_source is not None
+    or (st.session_state.get("data_loaded") and "_portfolio_cache" in st.session_state)
+)
+
 benchmark      = st.session_state.get("benchmark", "^GSPC")
 _bm_display    = {"^GSPC": "S&P 500", "^NSEI": "NIFTY 50", "^CRSLDX": "NIFTY 500",
                    "^BSESN": "SENSEX", "^DJI": "Dow Jones", "^IXIC": "NASDAQ"}
@@ -1306,7 +1315,7 @@ max_weight_pct = st.session_state.get("max_weight_pct", 15.0)
 max_weight     = max_weight_pct / 100
 lookback       = "max"
 
-if _effective_source is None:
+if not _has_loaded_portfolio:
     st.session_state.pop("data_loaded",    None)
     st.session_state.pop("selected_asset", None)
     st.session_state.pop("_pending_saved_load", None)
@@ -1375,8 +1384,16 @@ if _effective_source is None:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-_file_id = _saved_source_id if _saved_source_id is not None else getattr(uploaded_file, "file_id", uploaded_file.name)
-if st.session_state.get("_last_file_id") != _file_id:
+# Determine the id of the active source. Running purely off the cache (a
+# saved-portfolio load on a later rerun, e.g. tab switch) has no source — keep
+# the last known id so the cache-bust check below does not fire.
+if _saved_source_id is not None:
+    _file_id = _saved_source_id
+elif uploaded_file is not None:
+    _file_id = getattr(uploaded_file, "file_id", uploaded_file.name)
+else:
+    _file_id = st.session_state.get("_last_file_id")
+if _file_id is not None and st.session_state.get("_last_file_id") != _file_id:
     for _k in ("data_loaded","selected_asset","risk_summary","drawdown_series",
                "frontier","optimal_weights","_opt_key","_portfolio_cache","_benchmark_cache"):
         st.session_state.pop(_k, None)
