@@ -40,6 +40,39 @@ def compute_asset_beta(asset_returns, portfolio_returns):
 
 
 # ==========================================================
+# PRICE NORMALIZATION — for benchmark comparison
+# Rebases a price series to cumulative % change from its first
+# valid point, so series on different scales (a stock vs. an
+# index) can be compared on one axis.
+# ==========================================================
+
+def normalize_to_pct(price_series):
+    s = pd.Series(price_series).dropna()
+    if s.empty:
+        return s
+    base = s.iloc[0]
+    if base == 0 or pd.isna(base):
+        return s.iloc[0:0]  # empty, same dtype/index type — avoids div-by-zero
+    return (s / base - 1.0) * 100.0
+
+
+def align_and_normalize(asset_price, benchmark_price):
+    """Align two price series on their shared dates, then rebase each to
+    cumulative % from the shared start. Returns (asset_pct, benchmark_pct).
+    If there is no overlap, returns a pair of empty series.
+    """
+    aligned = pd.concat(
+        [pd.Series(asset_price).rename("asset"),
+         pd.Series(benchmark_price).rename("benchmark")],
+        axis=1,
+    ).dropna()
+    if aligned.empty:
+        empty = aligned["asset"] if "asset" in aligned else pd.Series(dtype="float64")
+        return empty, empty.copy()
+    return normalize_to_pct(aligned["asset"]), normalize_to_pct(aligned["benchmark"])
+
+
+# ==========================================================
 # FUNDAMENTAL DATA — TTM HELPERS
 # ==========================================================
 
