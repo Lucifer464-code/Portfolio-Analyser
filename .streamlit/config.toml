@@ -1,0 +1,11 @@
+# Pin the app to a dark theme regardless of the visitor's OS/browser
+# preference. The dashboard's custom CSS and Plotly templates are dark-only,
+# so forcing Streamlit's own chrome dark keeps everything consistent — it no
+# longer looks broken on light-mode machines.
+[theme]
+base = "dark"
+primaryColor = "#8b5cf6"
+backgroundColor = "#09080f"
+secondaryBackgroundColor = "#0e0c1a"
+textColor = "#ede9fe"
+font = "sans serif"

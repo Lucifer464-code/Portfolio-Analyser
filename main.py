@@ -70,10 +70,6 @@ pio.templates["portfolio_dark"] = go.layout.Template(
 )
 px.defaults.template = "portfolio_dark"
 
-# Colour scheme is driven purely by CSS (prefers-color-scheme). Charts keep the
-# dark template in both modes; pie-slice separators match the dark chart paper.
-_marker_edge = "#09080f"
-
 
 # ── CSS ────────────────────────────────────────────────────
 st.markdown("""
@@ -141,70 +137,11 @@ st.markdown("""
 }
 
 /* =========================================================
-   LIGHT MODE — follows the OS/browser preference.
-   Only the design tokens are redefined; the rest of the CSS
-   reads from these vars, so the whole app flips with them.
-========================================================= */
-
-@media (prefers-color-scheme: light) {
-  :root {
-    /* Surfaces — near-white, subtly layered */
-    --bg-base:       #f6f7fb;
-    --bg-surface:    #ffffff;
-    --bg-elevated:   #ffffff;
-    --bg-card:       #ffffff;
-
-    /* Borders — soft cool grey */
-    --border:        #e2e8f0;
-    --border-subtle: #eef1f6;
-
-    /* Accent — deeper purple for contrast on white */
-    --accent:        #7c3aed;
-    --accent-dim:    #6d28d9;
-    --accent-glow:   rgba(124,58,237,0.18);
-    --accent-glow2:  rgba(124,58,237,0.06);
-
-    /* Semantic — deepened so text/marks meet AA on white */
-    --positive:      #15803d;
-    --positive-dim:  #166534;
-    --positive-glow: rgba(21,128,61,0.12);
-    --negative:      #dc2626;
-    --negative-glow: rgba(220,38,38,0.12);
-    --warning:       #b45309;
-    --warning-glow:  rgba(180,83,9,0.12);
-    --purple:        #7c3aed;
-    --purple-glow:   rgba(124,58,237,0.12);
-    --cyan:          #0891b2;
-    --cyan-glow:     rgba(8,145,178,0.12);
-    --pink:          #db2777;
-    --pink-glow:     rgba(219,39,119,0.12);
-
-    /* Typography — dark slate on light */
-    --text-primary:  #1e293b;
-    --text-secondary:#475569;
-    --text-muted:    #94a3b8;
-
-    /* Elevation — soft, light-appropriate shadows */
-    --shadow:        0 4px 20px rgba(15,23,42,0.08);
-    --shadow-lg:     0 10px 40px rgba(15,23,42,0.12);
-    --shadow-accent: 0 8px 28px rgba(124,58,237,0.16);
-
-    /* Module identity colours — deepened variants */
-    --tab-overview: #7c3aed;
-    --tab-risk:     #dc2626;
-    --tab-optim:    #b45309;
-    --tab-perf:     #15803d;
-    --tab-asset:    #0891b2;
-    --tab-enh:      #db2777;
-  }
-}
-
-/* =========================================================
    AURORA BACKGROUND
 ========================================================= */
 
 body {
-  background-color: var(--bg-base) !important;
+  background-color: #09080f !important;
 }
 
 body::before {
@@ -233,21 +170,6 @@ body::after {
   z-index: -1;
   transform: translateZ(0);
   will-change: transform;
-}
-
-/* Light mode: soften the aurora glow and grid for a white canvas */
-@media (prefers-color-scheme: light) {
-  body::before {
-    background:
-      radial-gradient(ellipse at 15% 20%, rgba(124,58,237,0.06) 0%, transparent 55%),
-      radial-gradient(ellipse at 85% 75%, rgba(109,40,217,0.045) 0%, transparent 50%),
-      radial-gradient(ellipse at 65% 5%,  rgba(219,39,119,0.03)  0%, transparent 40%);
-  }
-  body::after {
-    background-image:
-      linear-gradient(rgba(100,116,139,0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(100,116,139,0.04) 1px, transparent 1px);
-  }
 }
 
 .main, .block-container {
@@ -298,7 +220,7 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 12px !imp
 
 /* Sidebar: fixed width, page shifts naturally */
 [data-testid="stSidebar"] {
-  background: var(--bg-surface) !important;
+  background: #0e0c16 !important;
   border-right: 1px solid rgba(139,92,246,0.14) !important;
   width: 220px !important;
   min-width: 220px !important;
@@ -559,38 +481,6 @@ hr {
 /* Hide Streamlit header toolbar */
 header[data-testid="stHeader"] {
   display: none !important;
-}
-
-/* =========================================================
-   LIGHT MODE — Streamlit chrome that renders outside the
-   token-driven CSS (app root + detached baseweb popovers).
-========================================================= */
-@media (prefers-color-scheme: light) {
-  .stApp, [data-testid="stAppViewContainer"] {
-    background: var(--bg-base) !important;
-  }
-  /* Dropdown / select popover menus (baseweb renders these detached) */
-  ul[role="listbox"],
-  div[data-baseweb="popover"] ul,
-  div[data-baseweb="menu"],
-  div[data-baseweb="select"] > div {
-    background: var(--bg-surface) !important;
-    color: var(--text-primary) !important;
-    border-color: var(--border) !important;
-  }
-  ul[role="listbox"] li,
-  div[data-baseweb="menu"] li {
-    color: var(--text-primary) !important;
-  }
-  ul[role="listbox"] li:hover,
-  div[data-baseweb="menu"] li:hover {
-    background: var(--bg-base) !important;
-  }
-  /* Tooltip bubbles */
-  div[data-baseweb="tooltip"] > div {
-    background: #1e293b !important;
-    color: #ffffff !important;
-  }
 }
 
 </style>
@@ -1781,24 +1671,21 @@ if _module == "overview":
     _hm_df = _hm_df.sort_values("Current Weight", ascending=False).reset_index(drop=True)
 
     def _pl_bg(pl_pct):
-        """Return a (background, border) that blends from red through neutral to
-        green. Theme-agnostic: a translucent green/red tint is layered over the
-        card's CSS surface variable, so it reads correctly in both light and
-        dark mode without any Python-side theme detection."""
+        """Return a background colour that blends from red through neutral to green."""
         _clamped = max(-0.5, min(0.5, pl_pct))
         if _clamped >= 0:
             _t = _clamped / 0.5
-            _alpha = 0.06 + _t * 0.16
-            _tint = f"rgba(34,197,94,{_alpha:.2f})"
+            _r = int(30 + (34 - 30) * _t)
+            _g = int(30 + (60 - 30) * _t)
+            _b = int(46 + (34 - 46) * _t)
             _border = f"rgba(34,197,94,{0.15 + _t * 0.35:.2f})"
         else:
             _t = abs(_clamped) / 0.5
-            _alpha = 0.06 + _t * 0.16
-            _tint = f"rgba(239,68,68,{_alpha:.2f})"
+            _r = int(30 + (60 - 30) * _t)
+            _g = int(30 + (25 - 30) * _t)
+            _b = int(46 + (35 - 46) * _t)
             _border = f"rgba(239,68,68,{0.15 + _t * 0.35:.2f})"
-        # Tint layered over the themed card surface (works light & dark).
-        _bg = f"linear-gradient({_tint}, {_tint}), var(--bg-card)"
-        return _bg, _border
+        return f"rgb({_r},{_g},{_b})", _border
 
     def _svg_spark(ticker, w=80, h=28):
         if ticker not in price_data.columns:
@@ -1842,7 +1729,7 @@ if _module == "overview":
             onmouseout="this.style.transform='none';this.style.boxShadow='none';">
           <div>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div style="font-size:14px;font-weight:700;color:var(--text-primary);letter-spacing:-0.01em;">{_tk}</div>
+              <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:-0.01em;">{_tk}</div>
               <div style="font-size:13px;font-weight:700;color:{_plc};">{_pls}{_pl:.2%}</div>
             </div>
             <div style="font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;
@@ -1891,7 +1778,7 @@ if _module == "overview":
         _sec_alloc = df.groupby("Sector")["Market Value"].sum().reset_index()
         if not _sec_alloc.empty:
             _sec_fig = px.pie(_sec_alloc, names="Sector", values="Market Value", hole=0.55)
-            _sec_fig.update_traces(textfont_size=11, marker=dict(line=dict(color=_marker_edge, width=2)))
+            _sec_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
             _sec_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
                                    legend=dict(orientation="v", x=1.02))
             st.plotly_chart(_sec_fig, use_container_width=True)
@@ -1909,7 +1796,7 @@ if _module == "overview":
         _at = df.groupby("Asset Type")["Market Value"].sum().reset_index()
         if not _at.empty:
             _at_fig = px.pie(_at, names="Asset Type", values="Market Value", hole=0.55)
-            _at_fig.update_traces(textfont_size=11, marker=dict(line=dict(color=_marker_edge, width=2)))
+            _at_fig.update_traces(textfont_size=11, marker=dict(line=dict(color="#09080f", width=2)))
             _at_fig.update_layout(height=280, margin=dict(l=0,r=0,t=0,b=0),
                                   legend=dict(orientation="v", x=1.02))
             st.plotly_chart(_at_fig, use_container_width=True)
