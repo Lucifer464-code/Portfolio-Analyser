@@ -39,6 +39,7 @@ from enhancement_engine import (
 from asset_analytics_engine import (
     get_asset_key_stats, compute_rolling_volatility, compute_rolling_correlation,
     compute_asset_drawdown, get_asset_fundamental_table, get_dividend_data,
+    align_and_normalize,
 )
 from performance_engine import get_performance_metrics, get_period_returns, get_rolling_metrics, compute_capture_ratios, compute_sector_contribution, compute_brinson_attribution
 from rebalance_engine import simulate_cash_injection, simulate_trade
@@ -2891,6 +2892,20 @@ elif _module == "asset_analytics":
     tf = st.radio("Timeframe",["1M","3M","6M","1Y","3Y","5Y"],horizontal=True,
                   key="asset_price_tf",label_visibility="collapsed")
 
+    # ── Benchmark comparison controls ───────────────────────
+    _cmp_map = {"S&P 500": "^GSPC", "NIFTY 50": "^NSEI", "NIFTY 500": "^CRSLDX",
+                "SENSEX": "^BSESN", "Dow Jones": "^DJI", "NASDAQ": "^IXIC"}
+    _cmp_names = list(_cmp_map.keys())
+    _cmp_default_name = benchmark_name if benchmark_name in _cmp_names else _cmp_names[0]
+    _cc1, _cc2 = st.columns([1, 2])
+    with _cc1:
+        _compare_on = st.checkbox("Compare with benchmark", value=False, key="asset_cmp_on")
+    with _cc2:
+        _cmp_name = st.selectbox("Comparison index", _cmp_names,
+                                 index=_cmp_names.index(_cmp_default_name),
+                                 key="asset_cmp_index", disabled=not _compare_on,
+                                 label_visibility="collapsed")
+
     # ── Stat row ────────────────────────────────────────────
     _cur_price = float(asset_price.iloc[-1]) if not asset_price.empty else 0.0
     _as1, _as2, _as3, _as4 = st.columns(4)
@@ -2905,11 +2920,47 @@ elif _module == "asset_analytics":
         'border-top:2px solid #8b5cf6;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
         unsafe_allow_html=True,
     )
-    card_header("PRICE HISTORY", colour="#8b5cf6")
-    fig = px.line(slice_tf(asset_price, tf), color_discrete_sequence=["#8b5cf6"])
-    fig.update_traces(line=dict(width=1.8))
-    fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0), hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    if not _compare_on:
+        card_header("PRICE HISTORY", colour="#8b5cf6")
+        fig = px.line(slice_tf(asset_price, tf), color_discrete_sequence=["#8b5cf6"])
+        fig.update_traces(line=dict(width=1.8))
+        fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0), hovermode="x unified")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        card_header(f"PRICE HISTORY — vs {_cmp_name}", colour="#8b5cf6")
+        _cmp_ticker = _cmp_map[_cmp_name]
+        _cmp_price = None
+        _bm_df = cached_fetch_market_data((_cmp_ticker,), lookback)
+        if _bm_df is not None and not _bm_df.empty:
+            _cmp_price = _bm_df.iloc[:, 0]
+
+        _asset_tf = slice_tf(asset_price, tf)
+        if _cmp_price is None:
+            # Benchmark unavailable — show asset only, normalized.
+            _a_norm, _ = align_and_normalize(_asset_tf, _asset_tf)
+            fig = px.line(_a_norm, color_discrete_sequence=["#8b5cf6"])
+            fig.update_traces(name=selected_asset)
+            st.caption("Benchmark data unavailable — showing asset only.")
+        else:
+            _cmp_tf = slice_tf(_cmp_price, tf)
+            _a_norm, _b_norm = align_and_normalize(_asset_tf, _cmp_tf)
+            if _a_norm.empty:
+                # No overlapping dates — fall back to asset-only normalized.
+                _a_norm, _ = align_and_normalize(_asset_tf, _asset_tf)
+                fig = px.line(_a_norm, color_discrete_sequence=["#8b5cf6"])
+                fig.update_traces(name=selected_asset)
+                st.caption("Not enough overlapping history — showing asset only.")
+            else:
+                _cmp_df = pd.concat(
+                    [_a_norm.rename(selected_asset), _b_norm.rename(_cmp_name)], axis=1
+                )
+                fig = px.line(_cmp_df, color_discrete_sequence=["#8b5cf6", "#f59e0b"])
+        fig.update_traces(line=dict(width=1.8))
+        fig.update_layout(height=360, margin=dict(l=0,r=0,t=0,b=0), hovermode="x unified",
+                          yaxis=dict(title="% change", ticksuffix="%"),
+                          legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0))
+        fig.add_hline(y=0, line_dash="dot", line_color="#4a4066", line_width=1)
+        st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Slice returns to same timeframe
