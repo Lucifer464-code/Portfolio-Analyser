@@ -1,10 +1,8 @@
 name: Keep Portivex Alive
-
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 minutes
+    - cron: '0 */6 * * *'   # Every 6 hours is plenty — Streamlit sleeps after ~12h idle
   workflow_dispatch:
-
 jobs:
   ping:
     runs-on: ubuntu-latest
@@ -13,13 +11,11 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
       - name: Install Playwright
         run: |
           pip install playwright
           playwright install chromium
-
-      - name: Wake up Portivex with real browser
+      - name: Wake up Portivex
         run: |
           python - <<'EOF'
           from playwright.sync_api import sync_playwright
@@ -27,8 +23,15 @@ jobs:
               browser = p.chromium.launch()
               page = browser.new_page()
               print("Opening Portivex...")
-              page.goto("https://portivex.streamlit.app/", wait_until="networkidle", timeout=60000)
-              page.wait_for_timeout(15000)  # Stay connected for 15 seconds
+              page.goto("https://portivex.streamlit.app/",
+                        wait_until="domcontentloaded", timeout=60000)
+              # If the app is asleep, click the wake-up button
+              try:
+                  page.get_by_text("Yes, get this app back up").click(timeout=8000)
+                  print("App was asleep — clicked wake button")
+              except Exception:
+                  print("No wake button — app already running")
+              page.wait_for_timeout(20000)  # let the WebSocket session register
               print("Done — Streamlit session established")
               browser.close()
           EOF
