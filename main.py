@@ -56,32 +56,7 @@ from external_apis import (
 # ── Page config ────────────────────────────────────────────
 st.set_page_config(layout="wide", page_title="Portfolio Analyser", page_icon="📈")
 
-# ── Colour-scheme detection ────────────────────────────────
-# CSS auto-adapts to the OS preference via prefers-color-scheme, but the
-# Plotly template is chosen in Python. We read the browser preference once
-# via a tiny JS eval and cache it. Until it resolves we default to "dark"
-# (the historical behaviour), so nothing regresses on the first run.
-from streamlit_js_eval import streamlit_js_eval
-
-def _detect_color_scheme() -> str:
-    if st.session_state.get("_color_scheme") in ("light", "dark"):
-        return st.session_state["_color_scheme"]
-    try:
-        is_dark = streamlit_js_eval(
-            js_expressions="window.matchMedia('(prefers-color-scheme: dark)').matches",
-            key="_detect_scheme", want_output=True,
-        )
-    except Exception:
-        is_dark = None
-    if is_dark is None:
-        return "dark"  # not resolved yet; settle on next rerun
-    scheme = "dark" if is_dark else "light"
-    st.session_state["_color_scheme"] = scheme
-    return scheme
-
-_color_scheme = _detect_color_scheme()
-
-# ── Plotly templates ───────────────────────────────────────
+# ── Plotly template ────────────────────────────────────────
 pio.templates["portfolio_dark"] = go.layout.Template(
     layout=go.Layout(
         paper_bgcolor="#09080f", plot_bgcolor="#09080f",
@@ -93,23 +68,11 @@ pio.templates["portfolio_dark"] = go.layout.Template(
         title=dict(font=dict(color="#e2e8f0", size=14)),
     )
 )
-pio.templates["portfolio_light"] = go.layout.Template(
-    layout=go.Layout(
-        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
-        font=dict(family="Inter, sans-serif", color="#475569", size=12),
-        colorway=["#7c3aed","#16a34a","#d97706","#dc2626","#0891b2","#db2777","#ea580c","#65a30d"],
-        xaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#cbd5e1", tickfont=dict(color="#64748b")),
-        yaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", zerolinecolor="#cbd5e1", tickfont=dict(color="#64748b")),
-        legend=dict(bgcolor="rgba(248,250,252,0.9)", bordercolor="#e2e8f0", borderwidth=1),
-        title=dict(font=dict(color="#1e293b", size=14)),
-    )
-)
-_active_template = "portfolio_light" if _color_scheme == "light" else "portfolio_dark"
-pio.templates.default = _active_template
-px.defaults.template = _active_template
+px.defaults.template = "portfolio_dark"
 
-# Slice/marker separator colour that matches the active surface.
-_marker_edge = "#ffffff" if _color_scheme == "light" else "#09080f"
+# Colour scheme is driven purely by CSS (prefers-color-scheme). Charts keep the
+# dark template in both modes; pie-slice separators match the dark chart paper.
+_marker_edge = "#09080f"
 
 
 # ── CSS ────────────────────────────────────────────────────
@@ -1819,36 +1782,23 @@ if _module == "overview":
 
     def _pl_bg(pl_pct):
         """Return a (background, border) that blends from red through neutral to
-        green. Uses a dark base in dark mode and a light tint base in light mode."""
+        green. Theme-agnostic: a translucent green/red tint is layered over the
+        card's CSS surface variable, so it reads correctly in both light and
+        dark mode without any Python-side theme detection."""
         _clamped = max(-0.5, min(0.5, pl_pct))
-        if _color_scheme == "light":
-            # Light neutral base (#f6f7fb ≈ 246,247,251) → soft green/red tint.
-            if _clamped >= 0:
-                _t = _clamped / 0.5
-                _r = int(246 + (220 - 246) * _t)
-                _g = int(247 + (247 - 247) * _t)
-                _b = int(251 + (228 - 251) * _t)
-                _border = f"rgba(21,128,61,{0.18 + _t * 0.32:.2f})"
-            else:
-                _t = abs(_clamped) / 0.5
-                _r = int(246 + (252 - 246) * _t)
-                _g = int(247 + (226 - 247) * _t)
-                _b = int(251 + (226 - 251) * _t)
-                _border = f"rgba(220,38,38,{0.18 + _t * 0.32:.2f})"
+        if _clamped >= 0:
+            _t = _clamped / 0.5
+            _alpha = 0.06 + _t * 0.16
+            _tint = f"rgba(34,197,94,{_alpha:.2f})"
+            _border = f"rgba(34,197,94,{0.15 + _t * 0.35:.2f})"
         else:
-            if _clamped >= 0:
-                _t = _clamped / 0.5
-                _r = int(30 + (34 - 30) * _t)
-                _g = int(30 + (60 - 30) * _t)
-                _b = int(46 + (34 - 46) * _t)
-                _border = f"rgba(34,197,94,{0.15 + _t * 0.35:.2f})"
-            else:
-                _t = abs(_clamped) / 0.5
-                _r = int(30 + (60 - 30) * _t)
-                _g = int(30 + (25 - 30) * _t)
-                _b = int(46 + (35 - 46) * _t)
-                _border = f"rgba(239,68,68,{0.15 + _t * 0.35:.2f})"
-        return f"rgb({_r},{_g},{_b})", _border
+            _t = abs(_clamped) / 0.5
+            _alpha = 0.06 + _t * 0.16
+            _tint = f"rgba(239,68,68,{_alpha:.2f})"
+            _border = f"rgba(239,68,68,{0.15 + _t * 0.35:.2f})"
+        # Tint layered over the themed card surface (works light & dark).
+        _bg = f"linear-gradient({_tint}, {_tint}), var(--bg-card)"
+        return _bg, _border
 
     def _svg_spark(ticker, w=80, h=28):
         if ticker not in price_data.columns:
