@@ -4,7 +4,7 @@
 # Changes vs v2:
 #   1. get_sp500_constituents — 7-day staleness check on cached CSV
 #   2. Momentum metrics fully vectorised (no per-ticker Python loop)
-#   3. compute_portfolio_3m_relative_performance — loop replaced with
+#   3. compute_portfolio_relative_performance — loop replaced with
 #      vectorised pandas operations
 #   4. Double price fetch eliminated — both functions share one download
 #      via a shared _fetch_price_data() helper that caches in-process
@@ -18,7 +18,7 @@ import yfinance as yf
 import requests
 import pandas as pd
 import numpy as np
-from typing import List, Optional
+from typing import Dict, List, Optional
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -242,7 +242,7 @@ def _download_prices(tickers: List[str], period: str) -> pd.DataFrame:
     """
     Single batched yfinance download. Returns a clean Close-price DataFrame.
     Both generate_enhancement_recommendations and
-    compute_portfolio_3m_relative_performance call this so the data is
+    compute_portfolio_relative_performance call this so the data is
     downloaded once and passed in — no duplicate network calls.
     """
     try:
@@ -535,16 +535,28 @@ def generate_enhancement_recommendations(
 
 
 # ==========================================================
-# FIX 3: Vectorised 3M Relative Performance
+# FIX 3: Vectorised Relative Performance
 # ==========================================================
 
-def compute_portfolio_3m_relative_performance(
+# Trading-day window and download lookback for each supported period.
+RELATIVE_PERIODS: Dict[str, Dict[str, object]] = {
+    "1M": {"window": 21,   "lookback": "6mo"},
+    "3M": {"window": 63,   "lookback": "1y"},
+    "6M": {"window": 126,  "lookback": "2y"},
+    "1Y": {"window": 252,  "lookback": "3y"},
+    "3Y": {"window": 756,  "lookback": "5y"},
+    "5Y": {"window": 1260, "lookback": "7y"},
+}
+
+
+def compute_portfolio_relative_performance(
     tickers: List[str],
     price_data: Optional[pd.DataFrame] = None,
     benchmark: str = BENCHMARK,
+    period: str = "3M",
 ) -> pd.DataFrame:
     """
-    Compute each holding's 3-month return vs the selected benchmark.
+    Compute each holding's return over `period` vs the selected benchmark.
 
     Parameters
     ----------
@@ -554,11 +566,20 @@ def compute_portfolio_3m_relative_performance(
         Pre-fetched price DataFrame. If None, data is downloaded here.
     benchmark : str
         Benchmark ticker to compare against. Defaults to module-level BENCHMARK.
+    period : str
+        One of the keys of RELATIVE_PERIODS (1M, 3M, 6M, 1Y, 3Y, 5Y).
     """
+
+    period = period.upper()
+    if period not in RELATIVE_PERIODS:
+        raise Exception(f"Unsupported period: {period}")
+
+    window   = int(RELATIVE_PERIODS[period]["window"])
+    lookback = str(RELATIVE_PERIODS[period]["lookback"])
 
     # ── Price data ────────────────────────────────────────
     if price_data is None:
-        price_data = _download_prices(tickers + [benchmark], LOOKBACK)
+        price_data = _download_prices(tickers + [benchmark], lookback)
 
     if price_data is None or price_data.empty:
         raise Exception("Price data unavailable.")
@@ -571,31 +592,31 @@ def compute_portfolio_3m_relative_performance(
 
     bm_prices = price_data[benchmark].dropna()
 
-    if len(bm_prices) < 63:
-        raise Exception("Insufficient benchmark history for 3M calculation.")
+    if len(bm_prices) < window:
+        raise Exception(f"Insufficient benchmark history for {period} calculation.")
 
-    benchmark_3m = float((bm_prices.iloc[-1] / bm_prices.iloc[-63]) - 1)
+    benchmark_ret = float((bm_prices.iloc[-1] / bm_prices.iloc[-window]) - 1)
 
-    # ── FIX 3: Vectorised 3M return for all tickers ───────
+    # ── FIX 3: Vectorised period return for all tickers ───
     # Filter to tickers present in price_data with enough history
     valid = [t for t in tickers if t in price_data.columns]
     prices = price_data[valid].dropna(how="all")
 
-    # Keep only columns with at least 63 rows of data
-    enough = prices.notna().sum() >= 63
+    # Keep only columns with at least `window` rows of data
+    enough = prices.notna().sum() >= window
     prices = prices.loc[:, enough]
 
     if prices.empty:
         return pd.DataFrame()
 
-    # Compute 3M return for every ticker in one vectorised operation
-    stock_3m = (prices.iloc[-1] / prices.iloc[-63] - 1)
+    # Compute the period return for every ticker in one vectorised operation
+    stock_ret = (prices.iloc[-1] / prices.iloc[-window] - 1)
 
     result = pd.DataFrame({
-        "Ticker":               stock_3m.index,
-        "3M Return":            stock_3m.values,
-        "Benchmark 3M":         benchmark_3m,
-        "Relative Performance": stock_3m.values - benchmark_3m,
+        "Ticker":                stock_ret.index,
+        f"{period} Return":      stock_ret.values,
+        f"Benchmark {period}":   benchmark_ret,
+        "Relative Performance":  stock_ret.values - benchmark_ret,
     })
 
     return result.reset_index(drop=True)

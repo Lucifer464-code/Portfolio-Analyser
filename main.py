@@ -32,7 +32,8 @@ from optimizer import (
 )
 from analytics import portfolio_health_score
 from enhancement_engine import (
-    compute_portfolio_3m_relative_performance,
+    RELATIVE_PERIODS,
+    compute_portfolio_relative_performance,
     generate_enhancement_recommendations,
     generate_sector_wise_recommendations,
 )
@@ -1130,7 +1131,7 @@ def cached_enhancement_recommendations(market="US"): return generate_enhancement
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_sector_recommendations(market="US"): return generate_sector_wise_recommendations(top_sectors=5, stocks_per_sector=5, market=market)
 @st.cache_data(show_spinner=False)
-def cached_3m_relative_performance(tickers, benchmark): return compute_portfolio_3m_relative_performance(list(tickers), benchmark=benchmark)
+def cached_relative_performance(tickers, benchmark, period="3M"): return compute_portfolio_relative_performance(list(tickers), benchmark=benchmark, period=period)
 
 @st.cache_data(show_spinner=False)
 def cached_rolling_annualized_returns(portfolio_returns, benchmark_returns, window: int) -> pd.DataFrame:
@@ -3170,14 +3171,29 @@ elif _module == "enhancement":
         unsafe_allow_html=True,
     )
 
-    # Pre-compute 3M relative performance
+    # ── Timeframe selector ─────────────────────────────────
+    _rp_period = st.radio(
+        "Relative Performance Timeframe", list(RELATIVE_PERIODS.keys()),
+        index=list(RELATIVE_PERIODS.keys()).index("3M"),
+        horizontal=True, key="enh_rel_tf", label_visibility="collapsed",
+    )
+    _rp_return_col    = f"{_rp_period} Return"
+    _rp_benchmark_col = f"Benchmark {_rp_period}"
+
+    # Buy/Sell bands were calibrated on 3M; scale them with the square root
+    # of the window so longer periods aren't all "Buy".
+    _rp_scale     = (int(RELATIVE_PERIODS[_rp_period]["window"]) / 63) ** 0.5
+    _rp_buy_band  =  0.20 * _rp_scale
+    _rp_sell_band = -0.10 * _rp_scale
+
+    # Pre-compute relative performance over the selected period
     try:
-        with st.spinner("Computing 3M relative performance…"):
-            pm_df = cached_3m_relative_performance(tickers_tuple, benchmark)
+        with st.spinner(f"Computing {_rp_period} relative performance…"):
+            pm_df = cached_relative_performance(tickers_tuple, benchmark, _rp_period)
 
         def _rule_engine(x):
             if pd.isna(x): return "No Data"
-            return "Sell" if x < -0.10 else "Buy" if x > 0.20 else "Hold"
+            return "Sell" if x < _rp_sell_band else "Buy" if x > _rp_buy_band else "Hold"
 
         pm_df["Action"] = pm_df["Relative Performance"].apply(_rule_engine)
         pm_df = pm_df.sort_values("Relative Performance", ascending=False).reset_index(drop=True)
@@ -3212,11 +3228,11 @@ elif _module == "enhancement":
         'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
         unsafe_allow_html=True,
     )
-    card_header("3-MONTH RELATIVE PERFORMANCE", colour="#ec4899")
+    card_header(f"{_rp_period} RELATIVE PERFORMANCE", colour="#ec4899")
     if _enh_data_ok and not pm_df.empty and "Relative Performance" in pm_df.columns:
         _bar_df = pm_df.reset_index(drop=True).copy()
         _bar_df["Colour"] = _bar_df["Relative Performance"].apply(
-            lambda x: "#22c55e" if x > 0.20 else ("#ef4444" if x < -0.10 else "#f59e0b")
+            lambda x: "#22c55e" if x > _rp_buy_band else ("#ef4444" if x < _rp_sell_band else "#f59e0b")
         )
         _hero_fig = go.Figure(go.Bar(
             x=_bar_df["Ticker"],
@@ -3276,8 +3292,8 @@ elif _module == "enhancement":
     if _enh_data_ok and not pm_df.empty:
         st.dataframe(
             style_pl(pm_df, ["Relative Performance"]).format({
-                "3M Return":            "{:.2%}",
-                "Benchmark 3M":         "{:.2%}",
+                _rp_return_col:         "{:.2%}",
+                _rp_benchmark_col:      "{:.2%}",
                 "Relative Performance": "{:.2%}",
             }),
             use_container_width=True,
