@@ -3251,7 +3251,27 @@ elif _module == "enhancement":
         empty_state("📊", "Relative performance data unavailable")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Row 2: Analyst Consensus ───────────────────────────
+    # ── Row 2: Holdings Signal Table ───────────────────────
+    st.markdown(
+        '<div style="background:var(--bg-card);border:1px solid var(--border);'
+        'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
+        unsafe_allow_html=True,
+    )
+    card_header("HOLDINGS SIGNAL TABLE", colour="#ec4899")
+    if _enh_data_ok and not pm_df.empty:
+        st.dataframe(
+            style_pl(pm_df, ["Relative Performance"]).format({
+                _rp_return_col:         "{:.2%}",
+                _rp_benchmark_col:      "{:.2%}",
+                "Relative Performance": "{:.2%}",
+            }),
+            use_container_width=True,
+        )
+    else:
+        empty_state("📊", "Holdings signal data unavailable")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 3: Analyst Consensus ───────────────────────────
     st.markdown(
         '<div style="background:var(--bg-card);border:1px solid var(--border);'
         'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
@@ -3286,21 +3306,9 @@ elif _module == "enhancement":
     elif _market != "IN":
         empty_state("📊", "Analyst consensus unavailable",
                     "No analyst coverage found for these tickers")
-
-    # Holdings signal table
-    card_header("HOLDINGS SIGNAL TABLE", colour="#ec4899")
-    if _enh_data_ok and not pm_df.empty:
-        st.dataframe(
-            style_pl(pm_df, ["Relative Performance"]).format({
-                _rp_return_col:         "{:.2%}",
-                _rp_benchmark_col:      "{:.2%}",
-                "Relative Performance": "{:.2%}",
-            }),
-            use_container_width=True,
-        )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Row 3: Sector Screener ─────────────────────────────
+    # ── Row 4: Sector Screener ─────────────────────────────
     st.markdown(
         '<div style="background:var(--bg-card);border:1px solid var(--border);'
         'border-top:2px solid #ec4899;border-radius:var(--radius);padding:20px;margin-bottom:16px;">',
