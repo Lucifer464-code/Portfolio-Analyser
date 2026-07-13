@@ -91,7 +91,22 @@ def load_and_validate_csv(uploaded_file) -> Tuple[pd.DataFrame, Dict]:
     df["Ticker"] = df["Ticker"].astype(str).str.upper().str.strip()
 
     # ── Clean Date ─────────────────────────────────────────
-    df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+    # ISO (YYYY-MM-DD) is unambiguous and must never be read day-first, or
+    # 2023-01-10 becomes 1 October and anything past the 12th (2023-02-15 —
+    # no month 15) coerces to NaT, silently emptying an ISO portfolio. Slash
+    # dates genuinely are ambiguous, so 03/04/2023 stays 3 April. Parse the
+    # two families separately rather than forcing one flag across both.
+    _raw_dates = df["Date"].astype(str).str.strip()
+    _is_iso = _raw_dates.str.match(r"^\d{4}-\d{1,2}-\d{1,2}")
+
+    _parsed = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+    _parsed[_is_iso] = pd.to_datetime(
+        _raw_dates[_is_iso], format="mixed", dayfirst=False, errors="coerce"
+    )
+    _parsed[~_is_iso] = pd.to_datetime(
+        _raw_dates[~_is_iso], format="mixed", dayfirst=True, errors="coerce"
+    )
+    df["Date"] = _parsed
     invalid_dates = df["Date"].isna().sum()
     if invalid_dates > 0:
         diagnostics["warning_dates"] = (
