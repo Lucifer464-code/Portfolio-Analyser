@@ -1285,40 +1285,23 @@ except Exception:
 # ── Resolve effective portfolio source: a fresh upload always wins over
 #    a staged saved-portfolio load. A staged load is turned into an
 #    in-memory CSV so it flows through the exact same pipeline as an upload.
-#    The uploader keeps returning the same object on every rerun until it is
-#    cleared, so an upload only counts as "fresh" while its id is unconsumed —
-#    otherwise a stale upload would permanently swallow every saved load.
 _pending = st.session_state.get("_pending_saved_load")
-_upload_id = (
-    getattr(uploaded_file, "file_id", uploaded_file.name)
-    if uploaded_file is not None else None
-)
-_source_kind, _source_id = _payload.resolve_source(
-    upload_id=_upload_id,
-    pending_name=_pending["name"] if _pending else None,
-    last_upload_id=st.session_state.get("_last_upload_id"),
-    active_saved_name=st.session_state.get("_active_saved_name"),
-)
-
 _saved_source = None
-if _source_kind == "saved" and _pending is not None:
+_saved_source_id = None
+if uploaded_file is None and _pending is not None:
     _saved_source = _payload.payload_to_csv_buffer(_pending["payload"])
-    st.session_state["_active_saved_name"] = _pending["name"]
+    _saved_source_id = f"saved:{_pending['name']}"
     # Apply saved settings before the pipeline reads them below.
     _s = _payload.payload_settings(_pending["payload"])
     st.session_state["benchmark"] = _s["benchmark"]
     st.session_state["max_weight_pct"] = _s["max_weight_pct"]
-elif _source_kind == "upload":
-    st.session_state["_last_upload_id"] = _upload_id
-    st.session_state.pop("_active_saved_name", None)
 
-_saved_source_id = _source_id if _source_kind == "saved" else None
-_effective_source = uploaded_file if _source_kind == "upload" else _saved_source
+_effective_source = uploaded_file if uploaded_file is not None else _saved_source
 
-# A portfolio loaded from a saved entry has no persistent source (the pending
-# flag is cleared once the first load builds the cache), so on later reruns —
-# e.g. switching tabs — treat an already-built cache as an active portfolio
-# instead of falling back to the home screen.
+# A portfolio loaded from a saved entry has no persistent source (the upload
+# widget is empty and the pending flag is cleared after the first load), so on
+# later reruns — e.g. switching tabs — treat an already-built cache as an
+# active portfolio instead of falling back to the home screen.
 _has_loaded_portfolio = (
     _effective_source is not None
     or (st.session_state.get("data_loaded") and "_portfolio_cache" in st.session_state)
@@ -1405,8 +1388,10 @@ if not _has_loaded_portfolio:
 # Determine the id of the active source. Running purely off the cache (a
 # saved-portfolio load on a later rerun, e.g. tab switch) has no source — keep
 # the last known id so the cache-bust check below does not fire.
-if _source_id is not None:
-    _file_id = _source_id
+if _saved_source_id is not None:
+    _file_id = _saved_source_id
+elif uploaded_file is not None:
+    _file_id = getattr(uploaded_file, "file_id", uploaded_file.name)
 else:
     _file_id = st.session_state.get("_last_file_id")
 if _file_id is not None and st.session_state.get("_last_file_id") != _file_id:
