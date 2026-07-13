@@ -10,6 +10,22 @@ from typing import Tuple, Dict, List
 
 TRANSACTION_COLUMNS = {"Ticker", "Date", "Action", "Quantity"}
 
+# Benchmark chosen automatically for each detected market.
+MARKET_BENCHMARKS = {"IN": "^NSEI", "US": "^GSPC"}
+
+
+def detect_market(tickers: List[str]) -> str:
+    """"IN" when at least half the holdings are Indian listings, else "US"."""
+    if not tickers:
+        return "US"
+    indian = sum(str(t).upper().endswith((".NS", ".BO")) for t in tickers)
+    return "IN" if indian >= len(tickers) / 2 else "US"
+
+
+def benchmark_for_market(market: str) -> str:
+    """NIFTY 50 for Indian portfolios, S&P 500 for US."""
+    return MARKET_BENCHMARKS.get(market, "^GSPC")
+
 # ==========================================================
 # CSV LOADING & VALIDATION — TRANSACTION FORMAT
 # Required:  Ticker, Date, Action (Buy/Sell), Quantity

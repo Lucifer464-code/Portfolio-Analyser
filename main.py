@@ -22,6 +22,7 @@ from config import RISK_PROFILES, TRADING_DAYS, DEFAULT_TRANSACTION_COST
 from data_engine import (
     load_and_validate_csv, compute_returns,
     aggregate_holdings, compute_xirr, compute_pl_summary,
+    detect_market, benchmark_for_market,
 )
 from risk_engine import (generate_risk_summary, rolling_volatility, rolling_correlation,
     compute_drawdown_series, var_cvar_summary, sector_concentration,
@@ -1304,9 +1305,10 @@ _saved_source = None
 if _source_kind == "saved" and _pending is not None:
     _saved_source = _payload.payload_to_csv_buffer(_pending["payload"])
     st.session_state["_active_saved_name"] = _pending["name"]
-    # Apply saved settings before the pipeline reads them below.
+    # Apply saved settings before the pipeline reads them below. The benchmark
+    # is deliberately not restored: it is auto-selected from the portfolio's
+    # market during the cache build, so a saved value would only be overwritten.
     _s = _payload.payload_settings(_pending["payload"])
-    st.session_state["benchmark"] = _s["benchmark"]
     st.session_state["max_weight_pct"] = _s["max_weight_pct"]
 elif _source_kind == "upload":
     st.session_state["_last_upload_id"] = _upload_id
@@ -1446,9 +1448,20 @@ if "_portfolio_cache" not in st.session_state:
     tickers       = df["Ticker"].unique().tolist()
     tickers_tuple = tuple(tickers)
 
-    _market   = "IN" if sum(t.endswith((".NS",".BO")) for t in tickers) >= len(tickers)/2 else "US"
+    _market   = detect_market(tickers)
     _currency = "₹" if _market == "IN" else "$"
     _rf_rate  = 0.065 if _market == "IN" else 0.05
+
+    # The benchmark follows the portfolio's market: NIFTY 50 for Indian
+    # holdings, S&P 500 for US. This runs only while the cache is being built
+    # (a fresh upload or a newly loaded portfolio), so a benchmark the user
+    # picks afterwards in the sidebar still stands for the rest of the session.
+    _auto_bm = benchmark_for_market(_market)
+    if st.session_state.get("benchmark") != _auto_bm:
+        st.session_state["benchmark"] = _auto_bm
+        benchmark = _auto_bm
+        st.session_state.pop("_benchmark_cache", None)
+        st.session_state["_last_benchmark"] = _auto_bm
 
     with st.spinner("Fetching market data…"):
         price_data = cached_fetch_market_data(tickers_tuple, lookback)
@@ -1535,6 +1548,11 @@ if "_portfolio_cache" not in st.session_state:
     st.session_state.pop("_pending_saved_load", None)
 
 # ── Read everything from cache ──────────────────────────────
+# The cache build may have auto-selected the benchmark from the portfolio's
+# market, so re-read it here: benchmark_name above was derived before that ran.
+benchmark      = st.session_state.get("benchmark", benchmark)
+benchmark_name = _bm_display.get(benchmark, benchmark)
+
 # Safe defaults in case cache is partially populated
 pl_summary, portfolio_xirr, benchmark_returns = {}, None, None
 _cache           = st.session_state["_portfolio_cache"]
@@ -3195,11 +3213,10 @@ elif _module == "enhancement":
     _rp_return_col    = f"{_rp_period} Return"
     _rp_benchmark_col = f"Benchmark {_rp_period}"
 
-    # Buy/Sell bands were calibrated on 3M; scale them with the square root
-    # of the window so longer periods aren't all "Buy".
-    _rp_scale     = (int(RELATIVE_PERIODS[_rp_period]["window"]) / 63) ** 0.5
-    _rp_buy_band  =  0.20 * _rp_scale
-    _rp_sell_band = -0.10 * _rp_scale
+    # Fixed Buy/Sell bands: the same ±10% leeway applies at every timeframe, so
+    # a row's Action means one consistent thing regardless of the period shown.
+    _rp_buy_band  =  0.10
+    _rp_sell_band = -0.10
 
     # Pre-compute relative performance over the selected period
     try:
