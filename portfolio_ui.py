@@ -7,9 +7,17 @@ import payload
 from local_store import LocalPortfolioStore
 
 
-@st.cache_resource
 def _get_store() -> LocalPortfolioStore:
-    return LocalPortfolioStore()
+    # Per-session, NOT @st.cache_resource: the store wraps a browser-localStorage
+    # bridge whose in-memory item cache is specific to one visitor's browser.
+    # A cached_resource is shared process-wide across every user session, which
+    # would leak one visitor's saved portfolios to everyone. session_state is
+    # per-user, so each browser gets its own store.
+    store = st.session_state.get("_portfolio_store")
+    if store is None:
+        store = LocalPortfolioStore()
+        st.session_state["_portfolio_store"] = store
+    return store
 
 
 def render_portfolio_panel() -> None:
