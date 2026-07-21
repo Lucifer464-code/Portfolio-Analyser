@@ -539,14 +539,38 @@ def generate_enhancement_recommendations(
 # ==========================================================
 
 # Trading-day window and download lookback for each supported period.
+from dateutil.relativedelta import relativedelta
+
+# Each period is anchored to a CALENDAR offset (e.g. exactly 1 month ago),
+# resolved to the nearest trading day on/before that date — not a fixed count
+# of trading rows. `min_rows` is a sanity floor so we don't compute a return
+# from almost no history; `lookback` sizes the yfinance download.
 RELATIVE_PERIODS: Dict[str, Dict[str, object]] = {
-    "1M": {"window": 21,   "lookback": "6mo"},
-    "3M": {"window": 63,   "lookback": "1y"},
-    "6M": {"window": 126,  "lookback": "2y"},
-    "1Y": {"window": 252,  "lookback": "3y"},
-    "3Y": {"window": 756,  "lookback": "5y"},
-    "5Y": {"window": 1260, "lookback": "7y"},
+    "1M": {"offset": relativedelta(months=1), "min_rows": 15,  "lookback": "6mo"},
+    "3M": {"offset": relativedelta(months=3), "min_rows": 45,  "lookback": "1y"},
+    "6M": {"offset": relativedelta(months=6), "min_rows": 90,  "lookback": "2y"},
+    "1Y": {"offset": relativedelta(years=1),  "min_rows": 180, "lookback": "3y"},
+    "3Y": {"offset": relativedelta(years=3),  "min_rows": 540, "lookback": "5y"},
+    "5Y": {"offset": relativedelta(years=5),  "min_rows": 900, "lookback": "7y"},
 }
+
+
+def _return_since(prices: pd.Series, target_date: pd.Timestamp) -> float:
+    """Return from the nearest trading day on/before target_date to the latest.
+
+    Returns NaN when the series has no observation on/before target_date
+    (e.g. a ticker that started trading after the anchor date).
+    """
+    s = prices.dropna()
+    if s.empty:
+        return np.nan
+    prior = s.index[s.index <= target_date]
+    if len(prior) == 0:
+        return np.nan
+    start = s.loc[prior[-1]]
+    if start == 0:
+        return np.nan
+    return float(s.iloc[-1] / start - 1)
 
 
 def compute_portfolio_relative_performance(
@@ -574,7 +598,8 @@ def compute_portfolio_relative_performance(
     if period not in RELATIVE_PERIODS:
         raise Exception(f"Unsupported period: {period}")
 
-    window   = int(RELATIVE_PERIODS[period]["window"])
+    offset   = RELATIVE_PERIODS[period]["offset"]
+    min_rows = int(RELATIVE_PERIODS[period]["min_rows"])
     lookback = str(RELATIVE_PERIODS[period]["lookback"])
 
     # ── Price data ────────────────────────────────────────
@@ -592,25 +617,28 @@ def compute_portfolio_relative_performance(
 
     bm_prices = price_data[benchmark].dropna()
 
-    if len(bm_prices) < window:
+    if len(bm_prices) < min_rows:
         raise Exception(f"Insufficient benchmark history for {period} calculation.")
 
-    benchmark_ret = float((bm_prices.iloc[-1] / bm_prices.iloc[-window]) - 1)
+    # Calendar anchor: exactly `offset` before the latest trading day, resolved
+    # per series to the nearest trading day on/before that date.
+    last_date   = bm_prices.index[-1]
+    target_date = last_date - offset
 
-    # ── FIX 3: Vectorised period return for all tickers ───
-    # Filter to tickers present in price_data with enough history
+    benchmark_ret = _return_since(bm_prices, target_date)
+
+    # ── Period return for every ticker vs the same calendar anchor ──
     valid = [t for t in tickers if t in price_data.columns]
     prices = price_data[valid].dropna(how="all")
 
-    # Keep only columns with at least `window` rows of data
-    enough = prices.notna().sum() >= window
+    # Keep only columns with enough history to be meaningful.
+    enough = prices.notna().sum() >= min_rows
     prices = prices.loc[:, enough]
 
     if prices.empty:
         return pd.DataFrame()
 
-    # Compute the period return for every ticker in one vectorised operation
-    stock_ret = (prices.iloc[-1] / prices.iloc[-window] - 1)
+    stock_ret = prices.apply(lambda col: _return_since(col, target_date))
 
     result = pd.DataFrame({
         "Ticker":                stock_ret.index,
